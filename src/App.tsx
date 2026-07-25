@@ -12,7 +12,7 @@ import { UnicornBackground } from "./components/UnicornBackground";
 
 function App() {
 	const [backgroundMode, setBackgroundMode] =
-		useState<BackgroundMode>("space");
+		useState<BackgroundMode>("black");
 	const [roseAnglePreset, setRoseAnglePreset] =
 		useState<RoseAnglePreset>("default");
 	const [roseMaterialPreset, setRoseMaterialPreset] =

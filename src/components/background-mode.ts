@@ -12,6 +12,11 @@ export const BACKGROUND_OPTIONS: Array<{
 	description: string;
 }> = [
 	{
+		value: "black",
+		label: "Black",
+		description: "Use a plain black backdrop.",
+	},
+	{
 		value: "space",
 		label: "Space",
 		description: "Show the Unicorn Studio space scene.",
@@ -20,11 +25,6 @@ export const BACKGROUND_OPTIONS: Array<{
 		value: "space2",
 		label: "Space 2",
 		description: "Show the second Unicorn Studio space scene.",
-	},
-	{
-		value: "black",
-		label: "Black",
-		description: "Use a plain black backdrop.",
 	},
 ];
 

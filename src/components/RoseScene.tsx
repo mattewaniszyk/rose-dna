@@ -27,7 +27,7 @@ type SceneEnvironmentProps = {
 	roseMaterialPreset: RoseMaterialPreset;
 };
 
-function createMirrorEnvironmentTexture(pmremGenerator: PMREMGenerator) {
+function createBareMetalEnvironmentTexture(pmremGenerator: PMREMGenerator) {
 	const scene = new Scene();
 	const boxGeometry = new BoxGeometry(20, 20, 20);
 	const topPanelGeometry = new PlaneGeometry(5.4, 4.6);
@@ -166,36 +166,38 @@ function SceneEnvironment({ roseMaterialPreset }: SceneEnvironmentProps) {
 			new RoomEnvironment(),
 			0.05,
 		).texture;
-		const chromeTexture = pmremGenerator.fromScene(
+		const metalTexture = pmremGenerator.fromScene(
 			new RoomEnvironment(),
 			0,
 		).texture;
-		const mirrorChromeTexture = createMirrorEnvironmentTexture(pmremGenerator);
+		const bareMetalTexture =
+			createBareMetalEnvironmentTexture(pmremGenerator);
 
 		pmremGenerator.dispose();
 
 		return {
 			frozen: frozenTexture,
-			metal: chromeTexture,
-			chrome: mirrorChromeTexture,
+			metal: metalTexture,
+			bareMetal: bareMetalTexture,
 		};
 	}, [gl]);
 
 	useEffect(() => {
+		// "chrome" falls through to null: it renders with an unlit ShaderMaterial.
 		scene.environment =
 			roseMaterialPreset === "frozen"
 				? reflectiveEnvironments.frozen
 				: roseMaterialPreset === "metal"
 					? reflectiveEnvironments.metal
-					: roseMaterialPreset === "chrome"
-					? reflectiveEnvironments.chrome
+					: roseMaterialPreset === "bare-metal"
+					? reflectiveEnvironments.bareMetal
 					: null;
 
 		return () => {
 			if (
 				scene.environment === reflectiveEnvironments.frozen ||
 				scene.environment === reflectiveEnvironments.metal ||
-				scene.environment === reflectiveEnvironments.chrome
+				scene.environment === reflectiveEnvironments.bareMetal
 			) {
 				scene.environment = null;
 			}
@@ -206,7 +208,7 @@ function SceneEnvironment({ roseMaterialPreset }: SceneEnvironmentProps) {
 		return () => {
 			reflectiveEnvironments.frozen.dispose();
 			reflectiveEnvironments.metal.dispose();
-			reflectiveEnvironments.chrome.dispose();
+			reflectiveEnvironments.bareMetal.dispose();
 		};
 	}, [reflectiveEnvironments]);
 
@@ -228,10 +230,11 @@ function SuspendedRose({
 
 	useFrame(({ clock }, delta) => {
 		const elapsed = clock.elapsedTime;
+		const baseY = roseAnglePreset === "top-down" ? -0.2 : -0.58;
 
 		if (floatRef.current) {
 			floatRef.current.position.y =
-				-0.58 + Math.sin(elapsed * 0.72) * 0.04;
+				baseY + Math.sin(elapsed * 0.72) * 0.04;
 			floatRef.current.rotation.x = Math.sin(elapsed * 0.26) * 0.012;
 			floatRef.current.rotation.z = Math.cos(elapsed * 0.24) * 0.01;
 		}
@@ -264,13 +267,13 @@ export function RoseScene({
 	roseMaterialPreset,
 }: RoseSceneProps) {
 	const fogColor = backgroundMode === "black" ? "#000000" : "#020102";
-	const isMirrorChrome = roseMaterialPreset === "chrome";
-	const hemisphereIntensity = isMirrorChrome ? 0.18 : 0.82;
-	const ambientIntensity = isMirrorChrome ? 0.035 : 0.22;
-	const directionalIntensity = isMirrorChrome ? 0.35 : 2.1;
-	const frontPointIntensity = isMirrorChrome ? 1.25 : 22;
-	const backPointIntensity = isMirrorChrome ? 0.4 : 9;
-	const lowerPointIntensity = isMirrorChrome ? 0.15 : 5;
+	const isBareMetal = roseMaterialPreset === "bare-metal";
+	const hemisphereIntensity = isBareMetal ? 0.18 : 0.82;
+	const ambientIntensity = isBareMetal ? 0.035 : 0.22;
+	const directionalIntensity = isBareMetal ? 0.35 : 2.1;
+	const frontPointIntensity = isBareMetal ? 1.25 : 22;
+	const backPointIntensity = isBareMetal ? 0.4 : 9;
+	const lowerPointIntensity = isBareMetal ? 0.15 : 5;
 
 	return (
 		<div className="scene" aria-hidden="true">

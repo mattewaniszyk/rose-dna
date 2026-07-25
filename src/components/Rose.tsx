@@ -1,5 +1,5 @@
-import { useLoader } from "@react-three/fiber";
-import { useMemo } from "react";
+import { useFrame, useLoader } from "@react-three/fiber";
+import { useEffect, useMemo } from "react";
 import {
 	Box3,
 	Color,
@@ -12,6 +12,11 @@ import {
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import roseModelUrl from "../assets/rose-model/rose.glb?url";
 import {
+	createLiquidMetalMaterial,
+	setLiquidMetalTime,
+} from "./rose-liquid-metal";
+import {
+	isRoseShaderPreset,
 	ROSE_MATERIAL_CONFIGS,
 	type RoseMaterialConfig,
 	type RoseMaterialPreset,
@@ -217,6 +222,11 @@ type RoseProps = {
 	materialPreset?: RoseMaterialPreset;
 };
 
+type PreparedRose = {
+	root: Object3D;
+	clonedMaterials: Material[];
+};
+
 function cloneMaterial(material: Material, config: RoseMaterialConfig) {
 	const nextMaterial = material.clone();
 
@@ -227,10 +237,31 @@ function cloneMaterial(material: Material, config: RoseMaterialConfig) {
 
 export function Rose({ materialPreset = "default" }: RoseProps) {
 	const gltf = useLoader(GLTFLoader, roseModelUrl);
+	const materialConfig = isRoseShaderPreset(materialPreset)
+		? null
+		: ROSE_MATERIAL_CONFIGS[materialPreset];
 
-	const rose = useMemo(() => {
+	// Shared across every rose mesh so one u_time drives the whole bloom.
+	const liquidMetalMaterial = useMemo(
+		() => (materialConfig === null ? createLiquidMetalMaterial() : null),
+		[materialConfig],
+	);
+
+	const prepared = useMemo<PreparedRose>(() => {
 		const root = gltf.scene.clone(true);
-		const materialConfig = ROSE_MATERIAL_CONFIGS[materialPreset];
+		const clonedMaterials: Material[] = [];
+
+		const resolveMaterial = (material: Material) => {
+			if (materialConfig === null) {
+				return liquidMetalMaterial as Material;
+			}
+
+			const nextMaterial = cloneMaterial(material, materialConfig);
+
+			clonedMaterials.push(nextMaterial);
+
+			return nextMaterial;
+		};
 
 		root.traverse((node) => {
 			if (!isMesh(node)) {
@@ -241,13 +272,11 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 			node.receiveShadow = false;
 
 			if (Array.isArray(node.material)) {
-				node.material = node.material.map((material) =>
-					cloneMaterial(material, materialConfig),
-				);
+				node.material = node.material.map(resolveMaterial);
 				return;
 			}
 
-			node.material = cloneMaterial(node.material, materialConfig);
+			node.material = resolveMaterial(node.material);
 		});
 
 		const anchor = getStemAnchor(root);
@@ -261,8 +290,36 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 		);
 		root.scale.setScalar(scale);
 
-		return root;
-	}, [gltf, materialPreset]);
+		return { root, clonedMaterials };
+	}, [gltf, liquidMetalMaterial, materialConfig]);
 
-	return <primitive object={rose} />;
+	useEffect(() => {
+		const { clonedMaterials } = prepared;
+
+		return () => {
+			clonedMaterials.forEach((material) => {
+				material.dispose();
+			});
+		};
+	}, [prepared]);
+
+	useEffect(() => {
+		if (!liquidMetalMaterial) {
+			return;
+		}
+
+		return () => {
+			liquidMetalMaterial.dispose();
+		};
+	}, [liquidMetalMaterial]);
+
+	useFrame(({ clock }) => {
+		if (!liquidMetalMaterial) {
+			return;
+		}
+
+		setLiquidMetalTime(liquidMetalMaterial, clock.elapsedTime);
+	});
+
+	return <primitive object={prepared.root} />;
 }

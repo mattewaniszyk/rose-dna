@@ -30,8 +30,23 @@ export type RoseMaterialPreset =
 	| "glossy"
 	| "frozen"
 	| "metal"
-	| "mirror"
+	| "bare-metal"
 	| "chrome";
+
+// Presets rendered by a custom ShaderMaterial instead of the PBR tweak pipeline.
+export type RoseShaderPreset = "chrome";
+
+export type RosePbrPreset = Exclude<RoseMaterialPreset, RoseShaderPreset>;
+
+const ROSE_SHADER_PRESETS: Record<RoseShaderPreset, true> = {
+	chrome: true,
+};
+
+export function isRoseShaderPreset(
+	preset: RoseMaterialPreset,
+): preset is RoseShaderPreset {
+	return Object.hasOwn(ROSE_SHADER_PRESETS, preset);
+}
 
 export type RoseMaterialConfig = {
 	metalness: MaterialScalarControl;
@@ -82,14 +97,14 @@ export const ROSE_MATERIAL_OPTIONS: Array<{
 		description: "Keep the current polished metallic rose finish.",
 	},
 	{
-		value: "mirror",
-		label: "Mirror",
-		description: "Keep the current mirror-silver rose finish.",
+		value: "bare-metal",
+		label: "Bare Metal",
+		description: "Keep the current polished bare-metal chrome finish.",
 	},
 	{
 		value: "chrome",
 		label: "Chrome",
-		description: "Animated liquid-metal chrome with flowing silver bands.",
+		description: "Animated liquid-metal chrome that flows over the bloom.",
 	},
 ];
 
@@ -99,12 +114,12 @@ export const ROSE_MATERIAL_LABELS: Record<RoseMaterialPreset, string> = {
 	glossy: "Glossy",
 	frozen: "Frozen",
 	metal: "Metal",
-	mirror: "Mirror",
+	"bare-metal": "Bare Metal",
 	chrome: "Chrome",
 };
 
 export const ROSE_MATERIAL_CONFIGS: Record<
-	RoseMaterialPreset,
+	RosePbrPreset,
 	RoseMaterialConfig
 > = {
 	default: {
@@ -173,22 +188,7 @@ export const ROSE_MATERIAL_CONFIGS: Record<
 		clearcoat: 0,
 		clearcoatRoughness: 0.02,
 	},
-	mirror: {
-		metalness: { mode: "set", value: 1 },
-		roughness: { mode: "set", value: 0.0006 },
-		petalEmissiveScalar: 0,
-		petalEmissiveIntensity: 0,
-		stemEmissive: [0, 0, 0],
-		stemEmissiveIntensity: 0,
-		forceColor: [0.78, 0.79, 0.82],
-		stripBaseColorMap: true,
-		stripEmissiveMap: true,
-		disableVertexColors: true,
-		envMapIntensity: 11.5,
-		clearcoat: 1,
-		clearcoatRoughness: 0,
-	},
-	chrome: {
+	"bare-metal": {
 		metalness: { mode: "set", value: 1 },
 		roughness: { mode: "set", value: 0.012 },
 		petalEmissiveScalar: 0,
