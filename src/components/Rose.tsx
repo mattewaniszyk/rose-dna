@@ -7,6 +7,8 @@ import {
 	Material,
 	Mesh,
 	Object3D,
+	type Texture,
+	type Vector2,
 	Vector3,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -21,6 +23,57 @@ import {
 	type RoseMaterialConfig,
 	type RoseMaterialPreset,
 } from "./rose-material";
+
+type SurfaceMapKey = "normalMap" | "roughnessMap" | "metalnessMap" | "aoMap";
+
+const SURFACE_MAP_KEYS: SurfaceMapKey[] = [
+	"normalMap",
+	"roughnessMap",
+	"metalnessMap",
+	"aoMap",
+];
+
+type SurfaceMapped = Partial<Record<SurfaceMapKey, Texture | null>> & {
+	normalScale?: Vector2;
+};
+
+// Lends one material's surface textures to another so both parts shade as the
+// same surface. Every rose mesh carries TEXCOORD_0 and TANGENT, so the borrowed
+// maps sample against the target's own unwrap.
+function copySurfaceMaps(target: Material, source: Material) {
+	const from = source as Material & SurfaceMapped;
+	const to = target as Material & SurfaceMapped;
+
+	SURFACE_MAP_KEYS.forEach((key) => {
+		if (key in from && key in to) {
+			to[key] = from[key] ?? null;
+		}
+	});
+
+	if (from.normalScale && to.normalScale) {
+		to.normalScale.copy(from.normalScale);
+	}
+
+	target.needsUpdate = true;
+}
+
+function findMaterialByName(root: Object3D, name: string) {
+	let match: Material | null = null;
+
+	root.traverse((node) => {
+		if (match || !isMesh(node)) {
+			return;
+		}
+
+		const materials = Array.isArray(node.material)
+			? node.material
+			: [node.material];
+
+		match = materials.find((material) => material.name === name) ?? null;
+	});
+
+	return match as Material | null;
+}
 
 function blendColor(
 	materialColor: Color,
@@ -67,6 +120,24 @@ function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 
 	if ("emissiveMap" in material && config.stripEmissiveMap) {
 		material.emissiveMap = null;
+	}
+
+	if (config.stripSurfaceMaps) {
+		if ("normalMap" in material) {
+			material.normalMap = null;
+		}
+
+		if ("roughnessMap" in material) {
+			material.roughnessMap = null;
+		}
+
+		if ("metalnessMap" in material) {
+			material.metalnessMap = null;
+		}
+
+		if ("aoMap" in material) {
+			material.aoMap = null;
+		}
 	}
 
 	if ("vertexColors" in material && config.disableVertexColors) {
@@ -227,10 +298,18 @@ type PreparedRose = {
 	clonedMaterials: Material[];
 };
 
-function cloneMaterial(material: Material, config: RoseMaterialConfig) {
+function cloneMaterial(
+	material: Material,
+	config: RoseMaterialConfig,
+	surfaceMapSource: Material | null,
+) {
 	const nextMaterial = material.clone();
 
 	tweakMaterial(nextMaterial, config);
+
+	if (surfaceMapSource && surfaceMapSource !== material) {
+		copySurfaceMaps(nextMaterial, surfaceMapSource);
+	}
 
 	return nextMaterial;
 }
@@ -250,13 +329,22 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 	const prepared = useMemo<PreparedRose>(() => {
 		const root = gltf.scene.clone(true);
 		const clonedMaterials: Material[] = [];
+		// Resolved against the untouched source materials, so it stays valid
+		// while the traverse below swaps each mesh over to its clone.
+		const surfaceMapSource = materialConfig?.surfaceMapSource
+			? findMaterialByName(root, materialConfig.surfaceMapSource)
+			: null;
 
 		const resolveMaterial = (material: Material) => {
 			if (materialConfig === null) {
 				return liquidMetalMaterial as Material;
 			}
 
-			const nextMaterial = cloneMaterial(material, materialConfig);
+			const nextMaterial = cloneMaterial(
+				material,
+				materialConfig,
+				surfaceMapSource,
+			);
 
 			clonedMaterials.push(nextMaterial);
 

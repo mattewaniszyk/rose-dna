@@ -25,7 +25,7 @@ import {
 	ROSE_ANGLE_PRESET_ROTATIONS,
 	type RoseAnglePreset,
 } from "./rose-angle";
-import type { RoseMaterialPreset } from "./rose-material";
+import { isBareMetalPreset, type RoseMaterialPreset } from "./rose-material";
 import { SceneBackdrop } from "./SceneBackdrop";
 import { Skybox } from "./Skybox";
 
@@ -195,7 +195,7 @@ function SceneEnvironment({ roseMaterialPreset }: SceneEnvironmentProps) {
 				? reflectiveEnvironments.frozen
 				: roseMaterialPreset === "metal"
 					? reflectiveEnvironments.metal
-					: roseMaterialPreset === "bare-metal"
+					: isBareMetalPreset(roseMaterialPreset)
 					? reflectiveEnvironments.bareMetal
 					: null;
 
@@ -280,7 +280,7 @@ export function RoseScene({
 	// backgrounds need capturing into the scene for the effects to reach them.
 	const needsBackdrop =
 		hasOverlayEffect && Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
-	const isBareMetal = roseMaterialPreset === "bare-metal";
+	const isBareMetal = isBareMetalPreset(roseMaterialPreset);
 	const hemisphereIntensity = isBareMetal ? 0.18 : 0.82;
 	const ambientIntensity = isBareMetal ? 0.035 : 0.22;
 	const directionalIntensity = isBareMetal ? 0.35 : 2.1;

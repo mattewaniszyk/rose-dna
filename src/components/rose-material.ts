@@ -31,6 +31,7 @@ export type RoseMaterialPreset =
 	| "frozen"
 	| "metal"
 	| "bare-metal"
+	| "black-metal"
 	| "chrome";
 
 // Presets rendered by a custom ShaderMaterial instead of the PBR tweak pipeline.
@@ -48,6 +49,20 @@ export function isRoseShaderPreset(
 	return Object.hasOwn(ROSE_SHADER_PRESETS, preset);
 }
 
+// The glTF material carrying the petal surface textures.
+export const PETAL_MATERIAL_NAME = "m_petal";
+
+// Mirror finishes lit by the dedicated studio environment rather than the
+// standard scene lights.
+const ROSE_BARE_METAL_PRESETS: Partial<Record<RoseMaterialPreset, true>> = {
+	"bare-metal": true,
+	"black-metal": true,
+};
+
+export function isBareMetalPreset(preset: RoseMaterialPreset) {
+	return Object.hasOwn(ROSE_BARE_METAL_PRESETS, preset);
+}
+
 export type RoseMaterialConfig = {
 	metalness: MaterialScalarControl;
 	roughness: MaterialRoughnessControl;
@@ -58,6 +73,14 @@ export type RoseMaterialConfig = {
 	forceColor?: [number, number, number];
 	stripBaseColorMap?: boolean;
 	stripEmissiveMap?: boolean;
+	// The GLB ships petals, stem, leafs and thorns as four materials, each with
+	// its own normal/metallic-roughness/occlusion textures. Those maps modulate
+	// the scalars set here, so parts still shade differently even when every
+	// other property is forced to one value. A preset settles that either by
+	// dropping the maps outright or by lending one part's maps to the rest.
+	stripSurfaceMaps?: boolean;
+	// glTF material name whose surface maps every other part borrows.
+	surfaceMapSource?: string;
 	disableVertexColors?: boolean;
 	petalColor?: MaterialColorBlend;
 	stemColor?: MaterialColorBlend;
@@ -102,6 +125,11 @@ export const ROSE_MATERIAL_OPTIONS: Array<{
 		description: "Keep the current polished bare-metal chrome finish.",
 	},
 	{
+		value: "black-metal",
+		label: "Black Metal",
+		description: "Untextured mirror chrome with no surface detail.",
+	},
+	{
 		value: "chrome",
 		label: "Chrome",
 		description: "Animated liquid-metal chrome that flows over the bloom.",
@@ -115,6 +143,7 @@ export const ROSE_MATERIAL_LABELS: Record<RoseMaterialPreset, string> = {
 	frozen: "Frozen",
 	metal: "Metal",
 	"bare-metal": "Bare Metal",
+	"black-metal": "Black Metal",
 	chrome: "Chrome",
 };
 
@@ -198,6 +227,25 @@ export const ROSE_MATERIAL_CONFIGS: Record<
 		forceColor: [0.82, 0.83, 0.86],
 		stripBaseColorMap: true,
 		stripEmissiveMap: true,
+		surfaceMapSource: PETAL_MATERIAL_NAME,
+		disableVertexColors: true,
+		envMapIntensity: 8.6,
+		clearcoat: 1,
+		clearcoatRoughness: 0.02,
+	},
+	// Same finish as bare-metal, minus every source texture, so the whole bloom
+	// resolves to one uniform mirror driven by geometry normals alone.
+	"black-metal": {
+		metalness: { mode: "set", value: 1 },
+		roughness: { mode: "set", value: 0.012 },
+		petalEmissiveScalar: 0,
+		petalEmissiveIntensity: 0,
+		stemEmissive: [0, 0, 0],
+		stemEmissiveIntensity: 0,
+		forceColor: [0.82, 0.83, 0.86],
+		stripBaseColorMap: true,
+		stripEmissiveMap: true,
+		stripSurfaceMaps: true,
 		disableVertexColors: true,
 		envMapIntensity: 8.6,
 		clearcoat: 1,
