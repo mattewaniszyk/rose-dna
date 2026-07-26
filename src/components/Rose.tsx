@@ -7,6 +7,7 @@ import {
 	Material,
 	Mesh,
 	Object3D,
+	type ShaderMaterial,
 	type Texture,
 	type Vector2,
 	Vector3,
@@ -15,13 +16,17 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import roseModelUrl from "../assets/rose-model/rose.glb?url";
 import {
 	createLiquidMetalMaterial,
+	type LiquidMetalParams,
 	setLiquidMetalTime,
 } from "./rose-liquid-metal";
 import {
 	isRoseShaderPreset,
 	ROSE_MATERIAL_CONFIGS,
+	ROSE_PART_BY_MATERIAL_NAME,
+	ROSE_SHADER_CONFIGS,
 	type RoseMaterialConfig,
 	type RoseMaterialPreset,
+	type RosePart,
 } from "./rose-material";
 
 type SurfaceMapKey = "normalMap" | "roughnessMap" | "metalnessMap" | "aoMap";
@@ -73,6 +78,10 @@ function findMaterialByName(root: Object3D, name: string) {
 	});
 
 	return match as Material | null;
+}
+
+function classifyRosePart(material: Material): RosePart {
+	return ROSE_PART_BY_MATERIAL_NAME[material.name] ?? "other";
 }
 
 function blendColor(
@@ -198,10 +207,9 @@ function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 			return;
 		}
 
-		if (
-			material.color.r > material.color.g &&
-			material.color.r > material.color.b
-		) {
+		const part = classifyRosePart(material);
+
+		if (part === "petal") {
 			if (config.petalColor) {
 				blendColor(material.color, config.petalColor);
 			}
@@ -210,7 +218,7 @@ function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 				.copy(material.color)
 				.multiplyScalar(config.petalEmissiveScalar);
 			material.emissiveIntensity = config.petalEmissiveIntensity;
-		} else if (material.color.g >= material.color.r) {
+		} else if (part === "stem") {
 			if (config.stemColor) {
 				blendColor(material.color, config.stemColor);
 			}
@@ -319,12 +327,32 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 	const materialConfig = isRoseShaderPreset(materialPreset)
 		? null
 		: ROSE_MATERIAL_CONFIGS[materialPreset];
+	const shaderConfig = isRoseShaderPreset(materialPreset)
+		? ROSE_SHADER_CONFIGS[materialPreset]
+		: null;
 
-	// Shared across every rose mesh so one u_time drives the whole bloom.
-	const liquidMetalMaterial = useMemo(
-		() => (materialConfig === null ? createLiquidMetalMaterial() : null),
-		[materialConfig],
-	);
+	// One material per distinct tuning, shared across every mesh that uses it, so
+	// a single u_time drives the whole bloom and untinted presets still allocate
+	// exactly one material.
+	const shaderMaterials = useMemo(() => {
+		if (!shaderConfig) {
+			return null;
+		}
+
+		const base = createLiquidMetalMaterial(shaderConfig.base);
+		const forPart = (override?: Partial<LiquidMetalParams>) =>
+			override
+				? createLiquidMetalMaterial({ ...shaderConfig.base, ...override })
+				: base;
+
+		const byPart: Record<RosePart, ShaderMaterial> = {
+			petal: forPart(shaderConfig.petal),
+			stem: forPart(shaderConfig.stem),
+			other: base,
+		};
+
+		return { byPart, all: [...new Set(Object.values(byPart))] };
+	}, [shaderConfig]);
 
 	const prepared = useMemo<PreparedRose>(() => {
 		const root = gltf.scene.clone(true);
@@ -337,7 +365,11 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 
 		const resolveMaterial = (material: Material) => {
 			if (materialConfig === null) {
-				return liquidMetalMaterial as Material;
+				const { byPart } = shaderMaterials as NonNullable<
+					typeof shaderMaterials
+				>;
+
+				return byPart[classifyRosePart(material)] as Material;
 			}
 
 			const nextMaterial = cloneMaterial(
@@ -379,7 +411,7 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 		root.scale.setScalar(scale);
 
 		return { root, clonedMaterials };
-	}, [gltf, liquidMetalMaterial, materialConfig]);
+	}, [gltf, materialConfig, shaderMaterials]);
 
 	useEffect(() => {
 		const { clonedMaterials } = prepared;
@@ -392,21 +424,25 @@ export function Rose({ materialPreset = "default" }: RoseProps) {
 	}, [prepared]);
 
 	useEffect(() => {
-		if (!liquidMetalMaterial) {
+		if (!shaderMaterials) {
 			return;
 		}
 
 		return () => {
-			liquidMetalMaterial.dispose();
+			shaderMaterials.all.forEach((material) => {
+				material.dispose();
+			});
 		};
-	}, [liquidMetalMaterial]);
+	}, [shaderMaterials]);
 
 	useFrame(({ clock }) => {
-		if (!liquidMetalMaterial) {
+		if (!shaderMaterials) {
 			return;
 		}
 
-		setLiquidMetalTime(liquidMetalMaterial, clock.elapsedTime);
+		shaderMaterials.all.forEach((material) => {
+			setLiquidMetalTime(material, clock.elapsedTime);
+		});
 	});
 
 	return <primitive object={prepared.root} />;

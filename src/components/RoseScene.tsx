@@ -25,7 +25,11 @@ import {
 	ROSE_ANGLE_PRESET_ROTATIONS,
 	type RoseAnglePreset,
 } from "./rose-angle";
-import { isBareMetalPreset, type RoseMaterialPreset } from "./rose-material";
+import {
+	isBareMetalPreset,
+	isRoseShaderPreset,
+	type RoseMaterialPreset,
+} from "./rose-material";
 import { SceneBackdrop } from "./SceneBackdrop";
 import { Skybox } from "./Skybox";
 
@@ -189,9 +193,11 @@ function SceneEnvironment({ roseMaterialPreset }: SceneEnvironmentProps) {
 	}, [gl]);
 
 	useEffect(() => {
-		// "chrome" falls through to null: it renders with an unlit ShaderMaterial.
-		scene.environment =
-			roseMaterialPreset === "frozen"
+		// Shader presets take null: they render with an unlit ShaderMaterial that
+		// never samples the environment.
+		scene.environment = isRoseShaderPreset(roseMaterialPreset)
+			? null
+			: roseMaterialPreset === "frozen"
 				? reflectiveEnvironments.frozen
 				: roseMaterialPreset === "metal"
 					? reflectiveEnvironments.metal

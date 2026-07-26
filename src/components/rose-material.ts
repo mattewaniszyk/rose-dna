@@ -1,3 +1,5 @@
+import type { LiquidMetalParams } from "./rose-liquid-metal";
+
 type MaterialScalarControl =
 	| {
 		mode: "cap";
@@ -32,15 +34,19 @@ export type RoseMaterialPreset =
 	| "metal"
 	| "bare-metal"
 	| "black-metal"
-	| "chrome";
+	| "chrome"
+	| "liquid-rose"
+	| "rose-mirror"
+	| "etched-rose";
 
 // Presets rendered by a custom ShaderMaterial instead of the PBR tweak pipeline.
-export type RoseShaderPreset = "chrome";
+export type RoseShaderPreset = "chrome" | "liquid-rose";
 
 export type RosePbrPreset = Exclude<RoseMaterialPreset, RoseShaderPreset>;
 
 const ROSE_SHADER_PRESETS: Record<RoseShaderPreset, true> = {
 	chrome: true,
+	"liquid-rose": true,
 };
 
 export function isRoseShaderPreset(
@@ -49,14 +55,57 @@ export function isRoseShaderPreset(
 	return Object.hasOwn(ROSE_SHADER_PRESETS, preset);
 }
 
+// Liquid-metal tunings per rose part. `base` covers the whole bloom; a part
+// with no override shares the base material rather than allocating its own.
+export type RoseShaderConfig = {
+	base: Partial<LiquidMetalParams>;
+	petal?: Partial<LiquidMetalParams>;
+	stem?: Partial<LiquidMetalParams>;
+};
+
+export const ROSE_SHADER_CONFIGS: Record<RoseShaderPreset, RoseShaderConfig> = {
+	chrome: {
+		base: {},
+	},
+	// Dark backs keep the bands blowing out to white at the crest, so the tint
+	// only lands in the mid-tones and still reads as metal rather than paint.
+	"liquid-rose": {
+		base: {},
+		petal: {
+			colorBack: "#180207",
+			colorTint: "#e8323f",
+			tintOpacity: 0.88,
+		},
+		stem: {
+			colorBack: "#04120a",
+			colorTint: "#2f9c55",
+			tintOpacity: 0.86,
+		},
+	},
+};
+
 // The glTF material carrying the petal surface textures.
 export const PETAL_MATERIAL_NAME = "m_petal";
+
+export type RosePart = "petal" | "stem" | "other";
+
+// Every part's color comes from its base color texture rather than a glTF
+// baseColorFactor, so all four materials report white and the only thing that
+// separates the bloom from the greenery is the material name.
+export const ROSE_PART_BY_MATERIAL_NAME: Record<string, RosePart> = {
+	[PETAL_MATERIAL_NAME]: "petal",
+	m_stem: "stem",
+	m_leafs: "stem",
+	m_thorns: "stem",
+};
 
 // Mirror finishes lit by the dedicated studio environment rather than the
 // standard scene lights.
 const ROSE_BARE_METAL_PRESETS: Partial<Record<RoseMaterialPreset, true>> = {
 	"bare-metal": true,
 	"black-metal": true,
+	"rose-mirror": true,
+	"etched-rose": true,
 };
 
 export function isBareMetalPreset(preset: RoseMaterialPreset) {
@@ -134,6 +183,22 @@ export const ROSE_MATERIAL_OPTIONS: Array<{
 		label: "Chrome",
 		description: "Animated liquid-metal chrome that flows over the bloom.",
 	},
+	{
+		value: "liquid-rose",
+		label: "Liquid Rose",
+		description:
+			"Flowing liquid chrome tinted red at the bloom and green down the stem.",
+	},
+	{
+		value: "rose-mirror",
+		label: "Rose Mirror",
+		description: "Untextured mirror finish in deep red and green.",
+	},
+	{
+		value: "etched-rose",
+		label: "Etched Rose",
+		description: "Mirror finish that keeps the petal and leaf surface detail.",
+	},
 ];
 
 export const ROSE_MATERIAL_LABELS: Record<RoseMaterialPreset, string> = {
@@ -145,6 +210,9 @@ export const ROSE_MATERIAL_LABELS: Record<RoseMaterialPreset, string> = {
 	"bare-metal": "Bare Metal",
 	"black-metal": "Black Metal",
 	chrome: "Chrome",
+	"liquid-rose": "Liquid Rose",
+	"rose-mirror": "Rose Mirror",
+	"etched-rose": "Etched Rose",
 };
 
 export const ROSE_MATERIAL_CONFIGS: Record<
@@ -250,5 +318,57 @@ export const ROSE_MATERIAL_CONFIGS: Record<
 		envMapIntensity: 8.6,
 		clearcoat: 1,
 		clearcoatRoughness: 0.02,
+	},
+	// Black-metal's mirror, tinted per part instead of forced to one silver.
+	// forceColor is deliberately unset: it short-circuits the petal/stem branch.
+	"rose-mirror": {
+		metalness: { mode: "set", value: 1 },
+		roughness: { mode: "set", value: 0.012 },
+		petalEmissiveScalar: 0,
+		petalEmissiveIntensity: 0,
+		stemEmissive: [0, 0, 0],
+		stemEmissiveIntensity: 0,
+		stripBaseColorMap: true,
+		stripEmissiveMap: true,
+		stripSurfaceMaps: true,
+		disableVertexColors: true,
+		petalColor: {
+			target: [0.72, 0.09, 0.14],
+			mix: 1,
+		},
+		stemColor: {
+			target: [0.11, 0.4, 0.17],
+			mix: 1,
+		},
+		// A tinted metal absorbs more of the studio environment than black-metal's
+		// neutral silver, so the intensity runs higher to land at the same
+		// brightness. The clearcoat adds the untinted white specular on top that
+		// keeps this reading as metal rather than candy paint.
+		envMapIntensity: 10.5,
+		clearcoat: 1,
+		clearcoatRoughness: 0.02,
+	},
+	// Mirror finish laid over the GLB's own textures: each part keeps its base
+	// color and surface maps, so the baked petal veins and leaf detail survive as
+	// modulation on the reflection.
+	"etched-rose": {
+		metalness: { mode: "set", value: 1 },
+		roughness: { mode: "set", value: 0.02 },
+		petalEmissiveScalar: 0,
+		petalEmissiveIntensity: 0,
+		stemEmissive: [0, 0, 0],
+		stemEmissiveIntensity: 0,
+		// Light blend only — the base color map already carries the red and green.
+		petalColor: {
+			target: [0.68, 0.1, 0.16],
+			mix: 0.45,
+		},
+		stemColor: {
+			target: [0.13, 0.38, 0.18],
+			mix: 0.4,
+		},
+		envMapIntensity: 6.4,
+		clearcoat: 1,
+		clearcoatRoughness: 0.04,
 	},
 };
