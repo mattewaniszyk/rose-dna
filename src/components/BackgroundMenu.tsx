@@ -70,7 +70,7 @@ export function BackgroundMenu({
 				<DropdownMenuTrigger asChild>
 					<Button
 						variant="outline"
-						className="group h-11 min-w-[14rem] justify-between rounded-full border-white/10 bg-black/55 px-3 text-left text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white sm:min-w-[16rem]"
+						className="group h-11 min-w-[14rem] justify-between gap-3 rounded-full border-white/10 bg-black/55 pl-5 pr-4 text-left text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white sm:min-w-[16rem]"
 					>
 						<span className="flex min-w-0 flex-col items-start gap-0.5">
 							<span className="text-[0.64rem] font-medium uppercase tracking-[0.22em] text-white/55">
