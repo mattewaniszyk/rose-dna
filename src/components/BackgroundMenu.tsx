@@ -5,6 +5,11 @@ import {
 	type BackgroundMode,
 } from "./background-mode";
 import {
+	OVERLAY_EFFECT_LABELS,
+	OVERLAY_EFFECT_OPTIONS,
+	type OverlayEffect,
+} from "./overlay-effect";
+import {
 	ROSE_ANGLE_PRESET_LABELS,
 	ROSE_ANGLE_PRESET_OPTIONS,
 	type RoseAnglePreset,
@@ -34,6 +39,8 @@ type BackgroundMenuProps = {
 	onRoseMaterialPresetChange: (
 		roseMaterialPreset: RoseMaterialPreset,
 	) => void;
+	overlayEffect: OverlayEffect;
+	onOverlayEffectChange: (overlayEffect: OverlayEffect) => void;
 };
 
 export function BackgroundMenu({
@@ -43,7 +50,20 @@ export function BackgroundMenu({
 	onRoseAnglePresetChange,
 	roseMaterialPreset,
 	onRoseMaterialPresetChange,
+	overlayEffect,
+	onOverlayEffectChange,
 }: BackgroundMenuProps) {
+	// The summary already truncates at three labels, so the effect only earns a
+	// slot once it is doing something.
+	const summary = [
+		BACKGROUND_MODE_LABELS[backgroundMode],
+		ROSE_ANGLE_PRESET_LABELS[roseAnglePreset],
+		ROSE_MATERIAL_LABELS[roseMaterialPreset],
+		...(overlayEffect === "none"
+			? []
+			: [OVERLAY_EFFECT_LABELS[overlayEffect]]),
+	].join(" · ");
+
 	return (
 		<div className="app-menu">
 			<DropdownMenu>
@@ -57,9 +77,7 @@ export function BackgroundMenu({
 								Scene
 							</span>
 							<span className="max-w-[12.5rem] truncate text-sm font-medium text-white/92 sm:max-w-[15.5rem]">
-								{BACKGROUND_MODE_LABELS[backgroundMode]} ·{" "}
-								{ROSE_ANGLE_PRESET_LABELS[roseAnglePreset]} ·{" "}
-								{ROSE_MATERIAL_LABELS[roseMaterialPreset]}
+								{summary}
 							</span>
 						</span>
 						<ChevronDownIcon className="size-4 text-white/60 transition-transform duration-200 group-data-[state=open]:rotate-180" />
@@ -139,6 +157,34 @@ export function BackgroundMenu({
 						}
 					>
 						{ROSE_MATERIAL_OPTIONS.map((option) => (
+							<DropdownMenuRadioItem
+								key={option.value}
+								value={option.value}
+								className="items-start rounded-2xl px-2 py-2.5 pr-9 focus:bg-white/8 focus:text-white"
+							>
+								<span className="flex flex-col gap-0.5">
+									<span className="text-sm font-medium text-white/92">
+										{option.label}
+									</span>
+									<span className="text-xs leading-relaxed text-white/55">
+										{option.description}
+									</span>
+								</span>
+							</DropdownMenuRadioItem>
+						))}
+					</DropdownMenuRadioGroup>
+					<DropdownMenuSeparator className="mx-1 bg-white/10" />
+					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
+						Overlay Effect
+					</DropdownMenuLabel>
+					<DropdownMenuSeparator className="mx-1 bg-white/10" />
+					<DropdownMenuRadioGroup
+						value={overlayEffect}
+						onValueChange={(value) =>
+							onOverlayEffectChange(value as OverlayEffect)
+						}
+					>
+						{OVERLAY_EFFECT_OPTIONS.map((option) => (
 							<DropdownMenuRadioItem
 								key={option.value}
 								value={option.value}

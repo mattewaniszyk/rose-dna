@@ -5,6 +5,7 @@ import {
 	BACKGROUND_MODE_PROJECT_IDS,
 	type BackgroundMode,
 } from "./components/background-mode";
+import type { OverlayEffect } from "./components/overlay-effect";
 import type { RoseAnglePreset } from "./components/rose-angle";
 import type { RoseMaterialPreset } from "./components/rose-material";
 import { RoseScene } from "./components/RoseScene";
@@ -17,6 +18,7 @@ function App() {
 		useState<RoseAnglePreset>("default");
 	const [roseMaterialPreset, setRoseMaterialPreset] =
 		useState<RoseMaterialPreset>("default");
+	const [overlayEffect, setOverlayEffect] = useState<OverlayEffect>("none");
 	const unicornProjectId = BACKGROUND_MODE_PROJECT_IDS[backgroundMode];
 
 	return (
@@ -29,6 +31,7 @@ function App() {
 			) : null}
 			<RoseScene
 				backgroundMode={backgroundMode}
+				overlayEffect={overlayEffect}
 				roseAnglePreset={roseAnglePreset}
 				roseMaterialPreset={roseMaterialPreset}
 			/>
@@ -40,6 +43,8 @@ function App() {
 					onRoseAnglePresetChange={setRoseAnglePreset}
 					roseMaterialPreset={roseMaterialPreset}
 					onRoseMaterialPresetChange={setRoseMaterialPreset}
+					overlayEffect={overlayEffect}
+					onOverlayEffectChange={setOverlayEffect}
 				/>
 			</div>
 		</main>

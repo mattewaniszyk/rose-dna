@@ -14,13 +14,19 @@ import {
 	type Group,
 } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { OverlayEffects } from "./OverlayEffects";
 import { Rose } from "./Rose";
-import type { BackgroundMode } from "./background-mode";
+import {
+	BACKGROUND_MODE_PROJECT_IDS,
+	type BackgroundMode,
+} from "./background-mode";
+import { isActiveOverlayEffect, type OverlayEffect } from "./overlay-effect";
 import {
 	ROSE_ANGLE_PRESET_ROTATIONS,
 	type RoseAnglePreset,
 } from "./rose-angle";
 import type { RoseMaterialPreset } from "./rose-material";
+import { SceneBackdrop } from "./SceneBackdrop";
 import { Skybox } from "./Skybox";
 
 type SceneEnvironmentProps = {
@@ -257,16 +263,23 @@ function SuspendedRose({
 
 type RoseSceneProps = {
 	backgroundMode: BackgroundMode;
+	overlayEffect: OverlayEffect;
 	roseAnglePreset: RoseAnglePreset;
 	roseMaterialPreset: RoseMaterialPreset;
 };
 
 export function RoseScene({
 	backgroundMode,
+	overlayEffect,
 	roseAnglePreset,
 	roseMaterialPreset,
 }: RoseSceneProps) {
 	const fogColor = backgroundMode === "black" ? "#000000" : "#020102";
+	const hasOverlayEffect = isActiveOverlayEffect(overlayEffect);
+	// The black mode is already opaque through Skybox, so only the Unicorn
+	// backgrounds need capturing into the scene for the effects to reach them.
+	const needsBackdrop =
+		hasOverlayEffect && Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
 	const isBareMetal = roseMaterialPreset === "bare-metal";
 	const hemisphereIntensity = isBareMetal ? 0.18 : 0.82;
 	const ambientIntensity = isBareMetal ? 0.035 : 0.22;
@@ -290,6 +303,10 @@ export function RoseScene({
 				<fog attach="fog" args={[fogColor, 12, 20]} />
 				<SceneEnvironment roseMaterialPreset={roseMaterialPreset} />
 				<Skybox backgroundMode={backgroundMode} />
+				{needsBackdrop ? <SceneBackdrop /> : null}
+				{hasOverlayEffect ? (
+					<OverlayEffects overlayEffect={overlayEffect} />
+				) : null}
 				<hemisphereLight
 					args={["#f8e4eb", "#060607", hemisphereIntensity]}
 				/>
