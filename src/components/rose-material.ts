@@ -36,17 +36,19 @@ export type RoseMaterialPreset =
 	| "black-metal"
 	| "chrome"
 	| "liquid-rose"
+	| "molten-rose"
 	| "rose-mirror"
 	| "etched-rose";
 
 // Presets rendered by a custom ShaderMaterial instead of the PBR tweak pipeline.
-export type RoseShaderPreset = "chrome" | "liquid-rose";
+export type RoseShaderPreset = "chrome" | "liquid-rose" | "molten-rose";
 
 export type RosePbrPreset = Exclude<RoseMaterialPreset, RoseShaderPreset>;
 
 const ROSE_SHADER_PRESETS: Record<RoseShaderPreset, true> = {
 	chrome: true,
 	"liquid-rose": true,
+	"molten-rose": true,
 };
 
 export function isRoseShaderPreset(
@@ -80,6 +82,24 @@ export const ROSE_SHADER_CONFIGS: Record<RoseShaderPreset, RoseShaderConfig> = {
 			colorBack: "#04120a",
 			colorTint: "#2f9c55",
 			tintOpacity: 0.86,
+		},
+	},
+	// Liquid rose with the white pulled out of the bands: the crest lands on a
+	// saturated hue instead of white, and the burn runs over a brighter tint so
+	// dropping the white highlight doesn't just make the whole bloom darker.
+	"molten-rose": {
+		base: {},
+		petal: {
+			colorBack: "#13000a",
+			colorHighlight: "#ff2f3c",
+			colorTint: "#ff4f59",
+			tintOpacity: 0.76,
+		},
+		stem: {
+			colorBack: "#00120b",
+			colorHighlight: "#1fdc62",
+			colorTint: "#40ee80",
+			tintOpacity: 0.76,
 		},
 	},
 };
@@ -190,6 +210,12 @@ export const ROSE_MATERIAL_OPTIONS: Array<{
 			"Flowing liquid chrome tinted red at the bloom and green down the stem.",
 	},
 	{
+		value: "molten-rose",
+		label: "Molten Rose",
+		description:
+			"Liquid rose with deeper, more saturated red and green and no white glare.",
+	},
+	{
 		value: "rose-mirror",
 		label: "Rose Mirror",
 		description: "Untextured mirror finish in deep red and green.",
@@ -211,6 +237,7 @@ export const ROSE_MATERIAL_LABELS: Record<RoseMaterialPreset, string> = {
 	"black-metal": "Black Metal",
 	chrome: "Chrome",
 	"liquid-rose": "Liquid Rose",
+	"molten-rose": "Molten Rose",
 	"rose-mirror": "Rose Mirror",
 	"etched-rose": "Etched Rose",
 };

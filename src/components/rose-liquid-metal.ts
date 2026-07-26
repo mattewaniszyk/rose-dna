@@ -2,6 +2,10 @@ import { Color, DoubleSide, ShaderMaterial } from "three";
 
 export type LiquidMetalParams = {
 	colorBack: string;
+	// Band crest color. White keeps the classic blown-out chrome highlight; a
+	// saturated value trades that white for hue at the brightest point, which the
+	// tint burn alone cannot do (burning leaves pure white pure white).
+	colorHighlight: string;
 	colorTint: string;
 	tintOpacity: number;
 	softness: number;
@@ -18,6 +22,7 @@ export type LiquidMetalParams = {
 
 export const LIQUID_METAL_DEFAULTS: LiquidMetalParams = {
 	colorBack: "#05060a",
+	colorHighlight: "#ffffff",
 	colorTint: "#d6e0f0",
 	tintOpacity: 0.55,
 	softness: 0.34,
@@ -49,6 +54,7 @@ void main() {
 const LIQUID_METAL_FRAGMENT_SHADER = /* glsl */ `
 uniform float u_time;
 uniform vec3 u_colorBack;
+uniform vec3 u_colorHighlight;
 uniform vec3 u_colorTint;
 uniform float u_tintOpacity;
 uniform float u_softness;
@@ -179,7 +185,7 @@ void main() {
 		getColorChanges(stripe, -u_shiftBlue, blur)
 	);
 
-	vec3 color = mix(u_colorBack, vec3(1.0), metal);
+	vec3 color = mix(u_colorBack, u_colorHighlight, metal);
 	vec3 burned = 1.0 - min(
 		vec3(1.0),
 		(1.0 - color) / max(u_colorTint, vec3(1e-4))
@@ -200,6 +206,7 @@ export function createLiquidMetalMaterial(params?: Partial<LiquidMetalParams>) {
 		uniforms: {
 			u_time: { value: 0 },
 			u_colorBack: { value: new Color(settings.colorBack) },
+			u_colorHighlight: { value: new Color(settings.colorHighlight) },
 			u_colorTint: { value: new Color(settings.colorTint) },
 			u_tintOpacity: { value: settings.tintOpacity },
 			u_softness: { value: settings.softness },
