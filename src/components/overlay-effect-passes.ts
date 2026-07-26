@@ -246,6 +246,12 @@ export const PIXELATE_DEFAULTS: PixelateParams = {
 	cellSize: 7,
 };
 
+// Same shader, finer grid: enough to still read as pixel art while keeping the
+// petal edges legible.
+export const PIXELATE_SMALL_DEFAULTS: PixelateParams = {
+	cellSize: 3,
+};
+
 const PIXELATE_FRAGMENT_SHADER = /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform vec2 u_resolution;
@@ -434,6 +440,14 @@ function createPixelateBundle(): OverlayPassBundle {
 	);
 }
 
+function createPixelateSmallBundle(): OverlayPassBundle {
+	return createCellShaderPass(
+		PIXELATE_FRAGMENT_SHADER,
+		{},
+		PIXELATE_SMALL_DEFAULTS.cellSize,
+	);
+}
+
 function createPosterizeBundle(): OverlayPassBundle {
 	const pass = new ShaderPass({
 		uniforms: {
@@ -560,6 +574,7 @@ const OVERLAY_PASS_FACTORIES: Record<
 	ascii: createAsciiBundle,
 	halftone: createHalftoneBundle,
 	pixelate: createPixelateBundle,
+	"pixelate-small": createPixelateSmallBundle,
 	posterize: createPosterizeBundle,
 	edge: createEdgeBundle,
 	bloom: createBloomBundle,

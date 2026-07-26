@@ -4,6 +4,7 @@ export type OverlayEffect =
 	| "ascii"
 	| "halftone"
 	| "pixelate"
+	| "pixelate-small"
 	| "posterize"
 	| "edge"
 	| "bloom"
@@ -49,6 +50,11 @@ export const OVERLAY_EFFECT_OPTIONS: Array<{
 		description: "Snap the frame down to chunky low-resolution pixels.",
 	},
 	{
+		value: "pixelate-small",
+		label: "Pixelate Small",
+		description: "Snap the frame to a finer pixel grid that keeps more detail.",
+	},
+	{
 		value: "posterize",
 		label: "Posterize",
 		description: "Flatten color into hard poster-print bands.",
@@ -81,6 +87,7 @@ export const OVERLAY_EFFECT_LABELS: Record<OverlayEffect, string> = {
 	ascii: "ASCII",
 	halftone: "Halftone",
 	pixelate: "Pixelate",
+	"pixelate-small": "Pixelate Small",
 	posterize: "Posterize",
 	edge: "Edge",
 	bloom: "Bloom",
