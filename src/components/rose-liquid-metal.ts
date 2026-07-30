@@ -18,6 +18,9 @@ export type LiquidMetalParams = {
 	speed: number;
 	noiseScale: number;
 	fresnelPower: number;
+	// View-based form: darkens facing surfaces and lifts rims with the highlight
+	// hue. 0 leaves chrome / liquid-rose unchanged.
+	formAmount: number;
 };
 
 export const LIQUID_METAL_DEFAULTS: LiquidMetalParams = {
@@ -35,6 +38,7 @@ export const LIQUID_METAL_DEFAULTS: LiquidMetalParams = {
 	speed: 0.22,
 	noiseScale: 2.4,
 	fresnelPower: 2.2,
+	formAmount: 0,
 };
 
 const LIQUID_METAL_VERTEX_SHADER = /* glsl */ `
@@ -67,6 +71,7 @@ uniform float u_angle;
 uniform float u_speed;
 uniform float u_noiseScale;
 uniform float u_fresnelPower;
+uniform float u_formAmount;
 
 varying vec3 vViewNormal;
 varying vec3 vViewPosition;
@@ -192,6 +197,14 @@ void main() {
 	);
 	color = mix(color, burned, u_tintOpacity);
 
+	// Soft form from the same fresnel used to warp bands: facing goes darker,
+	// rims lean toward the highlight hue so saturated presets keep their color.
+	if (u_formAmount > 0.0) {
+		float shade = mix(0.72, 1.18, fresnel);
+		vec3 rim = mix(color, u_colorHighlight, fresnel * 0.55);
+		color = mix(color, rim * shade, u_formAmount);
+	}
+
 	gl_FragColor = vec4(color, 1.0);
 
 	#include <tonemapping_fragment>
@@ -219,6 +232,7 @@ export function createLiquidMetalMaterial(params?: Partial<LiquidMetalParams>) {
 			u_speed: { value: settings.speed },
 			u_noiseScale: { value: settings.noiseScale },
 			u_fresnelPower: { value: settings.fresnelPower },
+			u_formAmount: { value: settings.formAmount },
 		},
 		vertexShader: LIQUID_METAL_VERTEX_SHADER,
 		fragmentShader: LIQUID_METAL_FRAGMENT_SHADER,

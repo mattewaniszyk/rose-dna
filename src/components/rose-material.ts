@@ -87,19 +87,23 @@ export const ROSE_SHADER_CONFIGS: Record<RoseShaderPreset, RoseShaderConfig> = {
 	// Liquid rose with the white pulled out of the bands: the crest lands on a
 	// saturated hue instead of white, and the burn runs over a brighter tint so
 	// dropping the white highlight doesn't just make the whole bloom darker.
+	// Deeper backs + hotter crests + formAmount restore mid-tone / rim depth
+	// without bringing the chrome glare back.
 	"molten-rose": {
 		base: {},
 		petal: {
-			colorBack: "#13000a",
-			colorHighlight: "#ff2f3c",
-			colorTint: "#ff4f59",
-			tintOpacity: 0.76,
+			colorBack: "#0a0006",
+			colorHighlight: "#ff5a45",
+			colorTint: "#c41838",
+			tintOpacity: 0.7,
+			formAmount: 0.42,
 		},
 		stem: {
-			colorBack: "#00120b",
-			colorHighlight: "#1fdc62",
-			colorTint: "#40ee80",
-			tintOpacity: 0.76,
+			colorBack: "#000a06",
+			colorHighlight: "#3aff7a",
+			colorTint: "#1a9a4a",
+			tintOpacity: 0.7,
+			formAmount: 0.42,
 		},
 	},
 };
