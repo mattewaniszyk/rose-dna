@@ -6,6 +6,8 @@ import {
 	DoubleSide,
 	Material,
 	Mesh,
+	MeshPhysicalMaterial,
+	MeshStandardMaterial,
 	Object3D,
 	type ShaderMaterial,
 	type Texture,
@@ -21,6 +23,7 @@ import {
 } from "./rose-liquid-metal";
 import {
 	isRoseShaderPreset,
+	needsPhysicalMaterial,
 	ROSE_MATERIAL_CONFIGS,
 	ROSE_PART_BY_MATERIAL_NAME,
 	ROSE_SHADER_CONFIGS,
@@ -116,6 +119,130 @@ function applyRoughnessControl(
 	return control.value;
 }
 
+function upgradeToPhysicalMaterial(material: Material) {
+	if (material instanceof MeshPhysicalMaterial) {
+		return material;
+	}
+
+	if (!(material instanceof MeshStandardMaterial)) {
+		return material;
+	}
+
+	// Build a fresh Physical material. MeshPhysicalMaterial.copy / Standard.copy
+	// both break Physical-only state (defines, clearcoat vectors, etc.).
+	const physical = new MeshPhysicalMaterial();
+
+	physical.name = material.name;
+	physical.color.copy(material.color);
+	physical.map = material.map;
+	physical.metalness = material.metalness;
+	physical.roughness = material.roughness;
+	physical.metalnessMap = material.metalnessMap;
+	physical.roughnessMap = material.roughnessMap;
+	physical.normalMap = material.normalMap;
+	if (material.normalScale) {
+		physical.normalScale.copy(material.normalScale);
+	}
+	physical.aoMap = material.aoMap;
+	physical.aoMapIntensity = material.aoMapIntensity;
+	physical.emissive.copy(material.emissive);
+	physical.emissiveMap = material.emissiveMap;
+	physical.emissiveIntensity = material.emissiveIntensity;
+	physical.envMapIntensity = material.envMapIntensity;
+	physical.vertexColors = material.vertexColors;
+	physical.opacity = material.opacity;
+	physical.transparent = material.transparent;
+	physical.side = material.side;
+
+	return physical;
+}
+
+function applyCrystalRainbow(material: MeshPhysicalMaterial, strength: number) {
+	material.onBeforeCompile = (shader) => {
+		shader.uniforms.uRainbowStrength = { value: strength };
+
+		if (!shader.fragmentShader.includes("uRainbowStrength")) {
+			shader.fragmentShader = shader.fragmentShader.replace(
+				"void main() {",
+				/* glsl */ `
+				uniform float uRainbowStrength;
+
+				vec3 roseCrystalHue(float h) {
+					vec3 k = vec3(1.0, 2.0 / 3.0, 1.0 / 3.0);
+					vec3 p = abs(fract(h + k) * 6.0 - 3.0);
+					return clamp(p - 1.0, 0.0, 1.0);
+				}
+
+				void main() {
+				`,
+			);
+		}
+
+		// Physical materials end at opaque_fragment (not output_fragment).
+		shader.fragmentShader = shader.fragmentShader.replace(
+			"#include <opaque_fragment>",
+			/* glsl */ `
+			{
+				float ndotv = abs(dot(geometryNormal, geometryViewDir));
+				float fresnel = pow(clamp(1.0 - ndotv, 0.0, 1.0), 1.4);
+				float wash = 0.1 + fresnel * 0.72;
+				float split = fresnel * 1.95
+					+ geometryNormal.x * 0.3
+					+ geometryNormal.y * 0.18
+					+ geometryNormal.z * 0.08;
+				vec3 prism = vec3(
+					roseCrystalHue(fract(split + 0.07)).r,
+					roseCrystalHue(fract(split)).g,
+					roseCrystalHue(fract(split - 0.09)).b
+				);
+				outgoingLight *= mix(vec3(1.0), prism * 1.15, wash * 0.22);
+				outgoingLight += prism * wash * uRainbowStrength;
+				diffuseColor.a = mix(
+					diffuseColor.a,
+					min(1.0, diffuseColor.a + 0.42),
+					fresnel * 0.8
+				);
+			}
+			#include <opaque_fragment>
+			`,
+		);
+	};
+	material.customProgramCacheKey = () =>
+		`crystal-rainbow-v2-${strength.toFixed(2)}`;
+	material.needsUpdate = true;
+}
+
+function applyBiolumeVeinMask(material: MeshStandardMaterial) {
+	material.onBeforeCompile = (shader) => {
+		shader.fragmentShader = shader.fragmentShader.replace(
+			"#include <emissivemap_fragment>",
+			/* glsl */ `
+			#include <emissivemap_fragment>
+			{
+				// geometryNormal isn't defined until lights_fragment_begin — use
+				// the already-resolved shading normal + view varying instead.
+				vec3 biolumeView = normalize( vViewPosition );
+				float ndotv = abs( dot( normal, biolumeView ) );
+				float rim = pow( clamp( 1.0 - ndotv, 0.0, 1.0 ), 2.2 );
+				float vein = 0.0;
+				#ifdef USE_MAP
+					vec4 biolumeSample = texture2D( map, vMapUv );
+					vein = max(
+						biolumeSample.r,
+						max( biolumeSample.g, biolumeSample.b )
+					);
+					vein = pow( clamp( vein * 1.2, 0.0, 1.0 ), 1.15 );
+				#endif
+				float mask = max( rim * 1.35, vein * 0.35 );
+				totalEmissiveRadiance *= mix( 0.12, 1.55, clamp( mask, 0.0, 1.0 ) );
+			}
+			`,
+		);
+	};
+	material.customProgramCacheKey = () => "biolume-rim-v2";
+	material.needsUpdate = true;
+}
+
 function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 	if (!("side" in material)) {
 		return;
@@ -191,6 +318,64 @@ function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 		material.envMapIntensity = config.envMapIntensity;
 	}
 
+	if (material instanceof MeshPhysicalMaterial) {
+		if (config.iridescence !== undefined) {
+			material.iridescence = config.iridescence;
+		}
+
+		if (config.iridescenceIOR !== undefined) {
+			material.iridescenceIOR = config.iridescenceIOR;
+		}
+
+		if (config.iridescenceThicknessRange !== undefined) {
+			material.iridescenceThicknessRange = config.iridescenceThicknessRange;
+		}
+
+		if (config.transmission !== undefined) {
+			material.transmission = config.transmission;
+		}
+
+		if (config.thickness !== undefined) {
+			material.thickness = config.thickness;
+		}
+
+		if (config.ior !== undefined) {
+			material.ior = config.ior;
+		}
+
+		if (config.attenuationColor !== undefined) {
+			material.attenuationColor.setRGB(...config.attenuationColor);
+		}
+
+		if (config.attenuationDistance !== undefined) {
+			material.attenuationDistance = config.attenuationDistance;
+		}
+
+		if (config.specularIntensity !== undefined) {
+			material.specularIntensity = config.specularIntensity;
+		}
+
+		if (config.specularColor !== undefined) {
+			material.specularColor.setRGB(...config.specularColor);
+		}
+
+		if (config.rainbowFresnel !== undefined && config.rainbowFresnel > 0) {
+			applyCrystalRainbow(material, config.rainbowFresnel);
+		}
+	}
+
+	if (config.opacity !== undefined && "opacity" in material) {
+		material.opacity = config.opacity;
+	}
+
+	if (config.transparent !== undefined && "transparent" in material) {
+		material.transparent = config.transparent;
+	}
+
+	if (config.depthWrite !== undefined && "depthWrite" in material) {
+		material.depthWrite = config.depthWrite;
+	}
+
 	if (
 		"color" in material &&
 		material.color instanceof Color &&
@@ -214,9 +399,14 @@ function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 				blendColor(material.color, config.petalColor);
 			}
 
-			material.emissive
-				.copy(material.color)
-				.multiplyScalar(config.petalEmissiveScalar);
+			if (config.petalEmissive) {
+				material.emissive.setRGB(...config.petalEmissive);
+			} else {
+				material.emissive
+					.copy(material.color)
+					.multiplyScalar(config.petalEmissiveScalar);
+			}
+
 			material.emissiveIntensity = config.petalEmissiveIntensity;
 		} else if (part === "stem") {
 			if (config.stemColor) {
@@ -225,6 +415,13 @@ function tweakMaterial(material: Material, config: RoseMaterialConfig) {
 
 			material.emissive.setRGB(...config.stemEmissive);
 			material.emissiveIntensity = config.stemEmissiveIntensity;
+		}
+
+		if (
+			config.biolumeVeinMask &&
+			material instanceof MeshStandardMaterial
+		) {
+			applyBiolumeVeinMask(material);
 		}
 	}
 
@@ -311,7 +508,11 @@ function cloneMaterial(
 	config: RoseMaterialConfig,
 	surfaceMapSource: Material | null,
 ) {
-	const nextMaterial = material.clone();
+	let nextMaterial = material.clone();
+
+	if (needsPhysicalMaterial(config)) {
+		nextMaterial = upgradeToPhysicalMaterial(nextMaterial);
+	}
 
 	tweakMaterial(nextMaterial, config);
 

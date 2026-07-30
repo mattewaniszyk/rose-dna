@@ -27,6 +27,8 @@ import {
 } from "./rose-angle";
 import {
 	isBareMetalPreset,
+	isDimStudioLitPreset,
+	isGlassPreset,
 	isRoseShaderPreset,
 	type RoseMaterialPreset,
 } from "./rose-material";
@@ -202,8 +204,8 @@ function SceneEnvironment({ roseMaterialPreset }: SceneEnvironmentProps) {
 				: roseMaterialPreset === "metal"
 					? reflectiveEnvironments.metal
 					: isBareMetalPreset(roseMaterialPreset)
-					? reflectiveEnvironments.bareMetal
-					: null;
+						? reflectiveEnvironments.bareMetal
+						: null;
 
 		return () => {
 			if (
@@ -281,18 +283,60 @@ export function RoseScene({
 	roseMaterialPreset,
 }: RoseSceneProps) {
 	const fogColor = backgroundMode === "black" ? "#000000" : "#020102";
-	const hasOverlayEffect = isActiveOverlayEffect(overlayEffect);
+	const usesBiolumeBloom =
+		roseMaterialPreset === "bioluminescent" && overlayEffect === "none";
+	const activeOverlayEffect = usesBiolumeBloom
+		? "biolume-bloom"
+		: overlayEffect;
+	const hasActiveOverlay = isActiveOverlayEffect(activeOverlayEffect);
 	// The black mode is already opaque through Skybox, so only the Unicorn
 	// backgrounds need capturing into the scene for the effects to reach them.
 	const needsBackdrop =
-		hasOverlayEffect && Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
-	const isBareMetal = isBareMetalPreset(roseMaterialPreset);
-	const hemisphereIntensity = isBareMetal ? 0.18 : 0.82;
-	const ambientIntensity = isBareMetal ? 0.035 : 0.22;
-	const directionalIntensity = isBareMetal ? 0.35 : 2.1;
-	const frontPointIntensity = isBareMetal ? 1.25 : 22;
-	const backPointIntensity = isBareMetal ? 0.4 : 9;
-	const lowerPointIntensity = isBareMetal ? 0.15 : 5;
+		hasActiveOverlay && Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
+	const isGlass = isGlassPreset(roseMaterialPreset);
+	const dimStudioLit = isDimStudioLitPreset(roseMaterialPreset);
+	const hemisphereIntensity = dimStudioLit
+		? 0.18
+		: roseMaterialPreset === "bioluminescent"
+			? 0.28
+			: isGlass
+				? 0.45
+				: 0.82;
+	const ambientIntensity = dimStudioLit
+		? 0.035
+		: roseMaterialPreset === "bioluminescent"
+			? 0.06
+			: isGlass
+				? 0.12
+				: 0.22;
+	const directionalIntensity = dimStudioLit
+		? 0.35
+		: roseMaterialPreset === "bioluminescent"
+			? 0.7
+			: isGlass
+				? 1.4
+				: 2.1;
+	const frontPointIntensity = dimStudioLit
+		? 1.25
+		: roseMaterialPreset === "bioluminescent"
+			? 4
+			: isGlass
+				? 8
+				: 22;
+	const backPointIntensity = dimStudioLit
+		? 0.4
+		: roseMaterialPreset === "bioluminescent"
+			? 1.8
+			: isGlass
+				? 2.5
+				: 9;
+	const lowerPointIntensity = dimStudioLit
+		? 0.15
+		: roseMaterialPreset === "bioluminescent"
+			? 1
+			: isGlass
+				? 1
+				: 5;
 
 	return (
 		<div className="scene" aria-hidden="true">
@@ -308,10 +352,16 @@ export function RoseScene({
 			>
 				<fog attach="fog" args={[fogColor, 12, 20]} />
 				<SceneEnvironment roseMaterialPreset={roseMaterialPreset} />
-				<Skybox backgroundMode={backgroundMode} />
+				{/* Glass uses canvas alpha to reveal the DOM backdrop, so skip the
+				    opaque black skybox that would block that see-through. */}
+				{isGlass ? null : <Skybox backgroundMode={backgroundMode} />}
 				{needsBackdrop ? <SceneBackdrop /> : null}
-				{hasOverlayEffect ? (
-					<OverlayEffects overlayEffect={overlayEffect} />
+				{hasActiveOverlay ? (
+					<OverlayEffects
+						overlayEffect={
+							activeOverlayEffect as Exclude<OverlayEffect, "none">
+						}
+					/>
 				) : null}
 				<hemisphereLight
 					args={["#f8e4eb", "#060607", hemisphereIntensity]}

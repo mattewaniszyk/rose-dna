@@ -8,6 +8,7 @@ export type OverlayEffect =
 	| "posterize"
 	| "edge"
 	| "bloom"
+	| "biolume-bloom"
 	| "chromatic"
 	| "grain";
 
@@ -91,6 +92,7 @@ export const OVERLAY_EFFECT_LABELS: Record<OverlayEffect, string> = {
 	posterize: "Posterize",
 	edge: "Edge",
 	bloom: "Bloom",
+	"biolume-bloom": "Biolume Bloom",
 	chromatic: "Chromatic",
 	grain: "Grain",
 };

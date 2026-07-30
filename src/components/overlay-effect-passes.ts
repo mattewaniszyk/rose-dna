@@ -552,6 +552,30 @@ function createBloomBundle(context: OverlayPassContext): OverlayPassBundle {
 	};
 }
 
+// Tight rim-biased bloom — only the hottest edges haze, fills stay crisp.
+function createBiolumeBloomBundle(
+	context: OverlayPassContext,
+): OverlayPassBundle {
+	const pass = new UnrealBloomPass(
+		new Vector2(
+			context.width * context.pixelRatio,
+			context.height * context.pixelRatio,
+		),
+		0.4,
+		0.16,
+		0.62,
+	);
+
+	return {
+		stage: "scene",
+		passes: [pass],
+		setSize: () => {},
+		dispose: () => {
+			pass.dispose();
+		},
+	};
+}
+
 function createGrainBundle(): OverlayPassBundle {
 	// FilmPass advances its own time uniform from the delta the composer passes.
 	const pass = new FilmPass(0.42, false);
@@ -578,6 +602,7 @@ const OVERLAY_PASS_FACTORIES: Record<
 	posterize: createPosterizeBundle,
 	edge: createEdgeBundle,
 	bloom: createBloomBundle,
+	"biolume-bloom": createBiolumeBloomBundle,
 	chromatic: createChromaticBundle,
 	grain: createGrainBundle,
 };
