@@ -67,7 +67,11 @@ function fitCaptureSize(source: HTMLCanvasElement) {
 	};
 }
 
-export function SceneBackdrop() {
+type SceneBackdropProps = {
+	onReadyChange?: (ready: boolean) => void;
+};
+
+export function SceneBackdrop({ onReadyChange }: SceneBackdropProps) {
 	const scene = useThree((state) => state.scene);
 
 	// Deliberately not willReadFrequently: that flag forces a CPU-backed canvas,
@@ -100,8 +104,10 @@ export function SceneBackdrop() {
 
 	useEffect(() => {
 		const state = progress.current;
+		onReadyChange?.(state.status === "live");
 
 		return () => {
+			onReadyChange?.(false);
 			if (!state.texture) {
 				return;
 			}
@@ -113,7 +119,7 @@ export function SceneBackdrop() {
 			state.texture.dispose();
 			state.texture = null;
 		};
-	}, [scene]);
+	}, [onReadyChange, scene]);
 
 	useFrame((_, delta) => {
 		const state = progress.current;
@@ -144,6 +150,7 @@ export function SceneBackdrop() {
 					}
 
 					state.status = "waiting";
+					onReadyChange?.(false);
 					return;
 				}
 			}
@@ -200,6 +207,7 @@ export function SceneBackdrop() {
 
 			state.texture = texture;
 			state.status = "live";
+			onReadyChange?.(true);
 			state.sinceRecheck = 0;
 			scene.background = texture;
 

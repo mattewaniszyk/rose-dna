@@ -294,6 +294,10 @@ type RoseSceneProps = {
 	roseAnglePreset: RoseAnglePreset;
 	roseMaterialPreset: RoseMaterialPreset;
 	audioEnergy?: number;
+	videoCaptureActive?: boolean;
+	videoCapturePixelRatio?: number;
+	onSceneCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
+	onBackdropReadyChange?: (ready: boolean) => void;
 };
 
 export function RoseScene({
@@ -302,6 +306,10 @@ export function RoseScene({
 	roseAnglePreset,
 	roseMaterialPreset,
 	audioEnergy = 0,
+	videoCaptureActive = false,
+	videoCapturePixelRatio = 1,
+	onSceneCanvasChange,
+	onBackdropReadyChange,
 }: RoseSceneProps) {
 	const fogColor = backgroundMode === "black" ? "#000000" : "#020102";
 	const usesBiolumeBloom =
@@ -313,7 +321,7 @@ export function RoseScene({
 	// The black mode is already opaque through Skybox, so only the Unicorn
 	// backgrounds need capturing into the scene for the effects to reach them.
 	const needsBackdrop =
-		hasActiveOverlay &&
+		(hasActiveOverlay || videoCaptureActive) &&
 		Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
 	const isGlass = isGlassPreset(roseMaterialPreset);
 	const dimStudioLit = isDimStudioLitPreset(roseMaterialPreset);
@@ -364,11 +372,12 @@ export function RoseScene({
 		<div className="scene" aria-hidden="true">
 			<Canvas
 				camera={{ position: [0.2, 0.55, 8.9], fov: 34 }}
-				dpr={[1, 2]}
+				dpr={videoCaptureActive ? videoCapturePixelRatio : [1, 2]}
 				gl={{ alpha: true }}
 				onCreated={({ camera, gl }) => {
 					gl.setClearAlpha(0);
 					camera.lookAt(0, 0.58, 0);
+					onSceneCanvasChange?.(gl.domElement);
 				}}
 				style={{ background: "transparent" }}
 			>
@@ -377,7 +386,9 @@ export function RoseScene({
 				{/* Glass uses canvas alpha to reveal the DOM backdrop, so skip the
 				    opaque black skybox that would block that see-through. */}
 				{isGlass ? null : <Skybox backgroundMode={backgroundMode} />}
-				{needsBackdrop ? <SceneBackdrop /> : null}
+				{needsBackdrop ? (
+					<SceneBackdrop onReadyChange={onBackdropReadyChange} />
+				) : null}
 				{hasActiveOverlay ? (
 					<OverlayEffects
 						overlayEffect={

@@ -1,6 +1,7 @@
 import {
 	ChevronDownIcon,
 	FileMusicIcon,
+	FilmIcon,
 	Loader2Icon,
 	PauseIcon,
 	PlayIcon,
@@ -28,6 +29,14 @@ import {
 	type VoiceSettings,
 } from "@/audio/types";
 import type { GenomicAudioController } from "@/hooks/useGenomicAudio";
+import {
+	VIDEO_ASPECT_RATIOS,
+	VIDEO_ASPECT_RATIO_CONFIGS,
+	VIDEO_QUALITY_CONFIGS,
+	VIDEO_QUALITY_PRESETS,
+	type VideoAspectRatio,
+	type VideoQualityPreset,
+} from "@/audio/video-export-options";
 
 type AudioPanelProps = {
 	audio: GenomicAudioController;
@@ -283,10 +292,13 @@ function getStatusLabel(audio: GenomicAudioController) {
 
 	if (audio.exportStatus === "exporting") {
 		return {
-			rendering: "Rendering audio",
+			"rendering-audio": "Rendering audio",
+			"preparing-scene": "Preparing scene",
+			"recording-video": "Recording video",
 			"loading-encoder": "Loading encoder",
-			encoding: "Encoding MP3",
-		}[audio.exportStage ?? "rendering"];
+			"encoding-mp3": "Encoding MP3",
+			"encoding-mp4": "Encoding MP4",
+		}[audio.exportStage ?? "rendering-audio"];
 	}
 
 	if (audio.isPlaying) {
@@ -294,7 +306,7 @@ function getStatusLabel(audio: GenomicAudioController) {
 	}
 
 	if (audio.exportStatus === "done") {
-		return "MP3 ready";
+		return `${audio.exportKind?.toUpperCase() ?? "Export"} ready`;
 	}
 
 	if (audio.buildStatus === "ready") {
@@ -331,6 +343,9 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 		audio.mappingOptions.groupEndingMode ?? "sustain";
 	const voiceSettings =
 		audio.mappingOptions.voiceSettings ?? DEFAULT_VOICE_SETTINGS;
+	const videoAspectConfig =
+		VIDEO_ASPECT_RATIO_CONFIGS[audio.videoAspectRatio];
+	const videoQualityConfig = VIDEO_QUALITY_CONFIGS[audio.videoQuality];
 
 	return (
 		<div className="audio-menu">
@@ -365,7 +380,7 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 						<div>
 							<p className="audio-panel-eyebrow">Genomic Audio</p>
 							<h2 className="audio-panel-title">
-								FASTQ to MIDI and MP3
+								FASTQ to MIDI, MP3, and MP4
 							</h2>
 						</div>
 						<div className="audio-panel-status">{statusLabel}</div>
@@ -628,8 +643,63 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 								</span>
 							</span>
 							<span className="audio-field-help" id="runtime-help">
-								Sets the exact loop and MP3 length. Selected DNA bases are
-								spread across this duration; MIDI uses the same sequence.
+								Sets the exact loop, MP3, and MP4 length. Selected DNA bases
+								are spread across this duration; MIDI uses the same sequence.
+							</span>
+						</label>
+
+						<label className="audio-field">
+							<span className="audio-label">MP4 Aspect Ratio</span>
+							<select
+								className="audio-select"
+								aria-describedby="video-aspect-ratio-help"
+								value={audio.videoAspectRatio}
+								onChange={(event) =>
+									audio.setVideoAspectRatio(
+										event.target.value as VideoAspectRatio,
+									)
+								}
+								disabled={isExporting}
+							>
+								{VIDEO_ASPECT_RATIOS.map((aspectRatio) => (
+									<option key={aspectRatio} value={aspectRatio}>
+										{VIDEO_ASPECT_RATIO_CONFIGS[aspectRatio].label}
+									</option>
+								))}
+							</select>
+							<span
+								className="audio-field-help"
+								id="video-aspect-ratio-help"
+							>
+								Center-crops the live scene to fill the selected frame. The MP4
+								stores an explicit {audio.videoAspectRatio} display ratio.
+							</span>
+						</label>
+
+						<label className="audio-field">
+							<span className="audio-label">MP4 Quality</span>
+							<select
+								className="audio-select"
+								aria-describedby="video-quality-help"
+								value={audio.videoQuality}
+								onChange={(event) =>
+									audio.setVideoQuality(
+										event.target.value as VideoQualityPreset,
+									)
+								}
+								disabled={isExporting}
+							>
+								{VIDEO_QUALITY_PRESETS.map((quality) => (
+									<option key={quality} value={quality}>
+										{VIDEO_QUALITY_CONFIGS[quality].label} ·{" "}
+										{VIDEO_QUALITY_CONFIGS[quality].description}
+									</option>
+								))}
+							</select>
+							<span className="audio-field-help" id="video-quality-help">
+								{videoQualityConfig.description}. Near-lossless minimizes visible
+								compression but can create very large files; the browser recording
+								stage prevents a mathematically lossless result.
 							</span>
 						</label>
 
@@ -666,7 +736,7 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 											event.target.checked,
 										)
 									}
-									disabled={!hasSequence}
+									disabled={!hasSequence || isExporting}
 								/>
 								Loop
 							</label>
@@ -681,7 +751,9 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 										? audio.pause()
 										: audio.play())
 								}
-								disabled={!hasSequence || audio.isPreparingVoices}
+								disabled={
+									!hasSequence || audio.isPreparingVoices || isExporting
+								}
 							>
 								{audio.isPreparingVoices ? (
 									<>
@@ -701,20 +773,45 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 								variant="outline"
 								size="sm"
 								onClick={audio.stop}
-								disabled={!hasSequence}
+								disabled={!hasSequence || isExporting}
 							>
 								<SquareIcon className="size-3.5" /> Stop
 							</Button>
+						</div>
+
+						<div className="audio-export-buttons">
 							<Button
 								variant="default"
 								size="sm"
 								onClick={() => void audio.exportMp3()}
 								disabled={!hasSequence || isExporting}
 							>
-								{isExporting ? (
+								{isExporting && audio.exportKind === "mp3" ? (
 									<Loader2Icon className="size-3.5 animate-spin" />
 								) : null}
 								Export MP3
+							</Button>
+							<Button
+								variant="default"
+								size="sm"
+								onClick={() => void audio.exportMp4()}
+								disabled={
+									!hasSequence ||
+									isExporting ||
+									!audio.isVideoExportSupported
+								}
+								title={
+									audio.isVideoExportSupported
+										? `Record ${videoAspectConfig.width}×${videoAspectConfig.height} ${audio.videoAspectRatio} MP4 at ${videoQualityConfig.label} quality`
+										: "MP4 export requires desktop Chrome or Edge"
+								}
+							>
+								{isExporting && audio.exportKind === "mp4" ? (
+									<Loader2Icon className="size-3.5 animate-spin" />
+								) : (
+									<FilmIcon className="size-3.5" />
+								)}
+								MP4
 							</Button>
 							<Button
 								variant="outline"
@@ -725,6 +822,12 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 								<FileMusicIcon className="size-3.5" /> MIDI
 							</Button>
 						</div>
+
+						{!audio.isVideoExportSupported ? (
+							<p className="audio-field-help">
+								MP4 export is available in current desktop Chrome and Edge.
+							</p>
+						) : null}
 
 						{isExporting ? (
 							<div className="audio-export-progress">
@@ -742,8 +845,9 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 								<div className="audio-progress-copy">
 									<span>{statusLabel}</span>
 									<span>
-										{Math.round(audio.exportProgress * 100)}
-										%
+										{audio.exportStage === "recording-video"
+											? `${formatSeconds(audio.exportProgress * runtimeSeconds)} / ${formatSeconds(runtimeSeconds)}`
+											: `${Math.round(audio.exportProgress * 100)}%`}
 									</span>
 								</div>
 								<Button
@@ -784,7 +888,9 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 
 						<p className="audio-caption">
 							Voice, volume, and octave choices are shared by playback,
-							MP3, and MIDI. FluidR3 samples are licensed CC BY 3.0.
+							MP3, MP4, and MIDI. MP4 recording runs in real time and the
+							tab must stay visible; browser encoding may take several more
+							minutes. FluidR3 samples are licensed CC BY 3.0.
 						</p>
 					</div>
 

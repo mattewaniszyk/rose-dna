@@ -125,9 +125,9 @@ describe("exportSequenceToMp3", () => {
 			channels: 2,
 			sampleRate: 44_100,
 		});
-		expect(stages).toContain("rendering");
+		expect(stages).toContain("rendering-audio");
 		expect(stages).toContain("loading-encoder");
-		expect(stages).toContain("encoding");
+		expect(stages).toContain("encoding-mp3");
 	});
 
 	it("resets a failed encoder so a retry can succeed", async () => {

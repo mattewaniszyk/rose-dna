@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 type BackgroundMenuProps = {
+	disabled?: boolean;
 	backgroundMode: BackgroundMode;
 	onBackgroundModeChange: (backgroundMode: BackgroundMode) => void;
 	roseAnglePreset: RoseAnglePreset;
@@ -44,6 +45,7 @@ type BackgroundMenuProps = {
 };
 
 export function BackgroundMenu({
+	disabled = false,
 	backgroundMode,
 	onBackgroundModeChange,
 	roseAnglePreset,
@@ -69,6 +71,7 @@ export function BackgroundMenu({
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<Button
+						disabled={disabled}
 						variant="outline"
 						className="group h-11 min-w-[14rem] justify-between gap-3 rounded-full border-white/10 bg-black/55 pl-5 pr-4 text-left text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white sm:min-w-[16rem]"
 					>
@@ -94,9 +97,11 @@ export function BackgroundMenu({
 					<DropdownMenuSeparator className="mx-1 bg-white/10" />
 					<DropdownMenuRadioGroup
 						value={backgroundMode}
-						onValueChange={(value) =>
-							onBackgroundModeChange(value as BackgroundMode)
-						}
+						onValueChange={(value) => {
+							if (!disabled) {
+								onBackgroundModeChange(value as BackgroundMode);
+							}
+						}}
 					>
 						{BACKGROUND_OPTIONS.map((option) => (
 							<DropdownMenuRadioItem
@@ -122,9 +127,11 @@ export function BackgroundMenu({
 					<DropdownMenuSeparator className="mx-1 bg-white/10" />
 					<DropdownMenuRadioGroup
 						value={roseAnglePreset}
-						onValueChange={(value) =>
-							onRoseAnglePresetChange(value as RoseAnglePreset)
-						}
+						onValueChange={(value) => {
+							if (!disabled) {
+								onRoseAnglePresetChange(value as RoseAnglePreset);
+							}
+						}}
 					>
 						{ROSE_ANGLE_PRESET_OPTIONS.map((option) => (
 							<DropdownMenuRadioItem
@@ -150,11 +157,13 @@ export function BackgroundMenu({
 					<DropdownMenuSeparator className="mx-1 bg-white/10" />
 					<DropdownMenuRadioGroup
 						value={roseMaterialPreset}
-						onValueChange={(value) =>
-							onRoseMaterialPresetChange(
-								value as RoseMaterialPreset,
-							)
-						}
+						onValueChange={(value) => {
+							if (!disabled) {
+								onRoseMaterialPresetChange(
+									value as RoseMaterialPreset,
+								);
+							}
+						}}
 					>
 						{ROSE_MATERIAL_OPTIONS.map((option) => (
 							<DropdownMenuRadioItem
@@ -180,9 +189,11 @@ export function BackgroundMenu({
 					<DropdownMenuSeparator className="mx-1 bg-white/10" />
 					<DropdownMenuRadioGroup
 						value={overlayEffect}
-						onValueChange={(value) =>
-							onOverlayEffectChange(value as OverlayEffect)
-						}
+						onValueChange={(value) => {
+							if (!disabled) {
+								onOverlayEffectChange(value as OverlayEffect);
+							}
+						}}
 					>
 						{OVERLAY_EFFECT_OPTIONS.map((option) => (
 							<DropdownMenuRadioItem

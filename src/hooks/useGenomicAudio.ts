@@ -3,8 +3,11 @@ import * as Tone from "tone";
 import { downloadBlob } from "@/audio/download";
 import type {
 	Mp3ExportProgress,
-	Mp3ExportStage,
 } from "@/audio/export-mp3";
+import type {
+	MediaExportKind,
+	MediaExportStage,
+} from "@/audio/export-media";
 import { FASTQ_FIXTURES } from "@/audio/fixtures";
 import { loadFastqFixtureData } from "@/audio/fastq";
 import { mapDatasetToSequence } from "@/audio/mapping";
@@ -37,9 +40,25 @@ import {
 	type GenomicVoiceBank,
 } from "@/audio/voices";
 import type { GenomicVoice } from "@/audio/voice-types";
+import {
+	DEFAULT_VIDEO_ASPECT_RATIO,
+	DEFAULT_VIDEO_QUALITY_PRESET,
+	type VideoCaptureRequest,
+	type VideoAspectRatio,
+	type VideoQualityPreset,
+} from "@/audio/video-export-options";
 
 type BuildStatus = "idle" | "loading" | "ready" | "error";
 type ExportStatus = "idle" | "exporting" | "done" | "error";
+
+type VideoExportBridge = {
+	prepareScene: (
+		request: VideoCaptureRequest,
+		signal?: AbortSignal,
+	) => Promise<HTMLCanvasElement>;
+	releaseScene: () => void;
+	onVisualEnergy: (energy: number) => void;
+};
 
 function clampInt(value: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, Math.floor(value)));
@@ -61,7 +80,7 @@ function stringifyUnknownError(error: unknown) {
 	return JSON.stringify(error);
 }
 
-export function useGenomicAudio() {
+export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 	const fixtures = useMemo(() => FASTQ_FIXTURES, []);
 	const [selectedFixtureId, setSelectedFixtureId] = useState(
 		fixtures[0]?.id ?? "",
@@ -82,9 +101,17 @@ export function useGenomicAudio() {
 	const [playbackTriggerCount, setPlaybackTriggerCount] = useState(0);
 	const [audioContextState, setAudioContextState] = useState("not-started");
 	const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
+	const [exportKind, setExportKind] = useState<MediaExportKind | null>(null);
 	const [exportError, setExportError] = useState<string | null>(null);
-	const [exportStage, setExportStage] = useState<Mp3ExportStage | null>(null);
+	const [exportStage, setExportStage] = useState<MediaExportStage | null>(null);
 	const [exportProgress, setExportProgress] = useState(0);
+	const [isVideoExportSupported, setIsVideoExportSupported] = useState(false);
+	const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>(
+		DEFAULT_VIDEO_ASPECT_RATIO,
+	);
+	const [videoQuality, setVideoQuality] = useState<VideoQualityPreset>(
+		DEFAULT_VIDEO_QUALITY_PRESET,
+	);
 	const [previewingBase, setPreviewingBase] =
 		useState<CanonicalBase | null>(null);
 	const [isPreparingVoices, setIsPreparingVoices] = useState(false);
@@ -108,6 +135,27 @@ export function useGenomicAudio() {
 	const currentMappingOptionsRef = useRef(mappingOptions);
 	currentSourceConfigurationKeyRef.current = sourceConfigurationKey;
 	currentMappingOptionsRef.current = mappingOptions;
+
+	useEffect(() => {
+		let active = true;
+
+		void import("@/audio/export-mp4").then(
+			({ isMp4ExportSupported }) => {
+				if (active) {
+					setIsVideoExportSupported(isMp4ExportSupported());
+				}
+			},
+			() => {
+				if (active) {
+					setIsVideoExportSupported(false);
+				}
+			},
+		);
+
+		return () => {
+			active = false;
+		};
+	}, []);
 
 	const disposeSignalChain = useCallback(() => {
 		signalChainGenerationRef.current += 1;
@@ -338,6 +386,7 @@ export function useGenomicAudio() {
 		setBuildStatus("idle");
 		setBuildError(null);
 		setExportStatus("idle");
+		setExportKind(null);
 		setExportStage(null);
 		setExportProgress(0);
 		setExportError(null);
@@ -364,6 +413,7 @@ export function useGenomicAudio() {
 		setPlaybackTriggerCount(0);
 		setBuildError(null);
 		setExportStatus("idle");
+		setExportKind(null);
 		setExportStage(null);
 		setExportProgress(0);
 		setExportError(null);
@@ -604,8 +654,9 @@ export function useGenomicAudio() {
 		exportAbortControllerRef.current?.abort();
 		exportAbortControllerRef.current = abortController;
 		setExportStatus("exporting");
+		setExportKind("mp3");
 		setExportError(null);
-		setExportStage("rendering");
+		setExportStage("rendering-audio");
 		setExportProgress(0);
 
 		try {
@@ -625,6 +676,7 @@ export function useGenomicAudio() {
 		} catch (error) {
 			if (abortController.signal.aborted) {
 				setExportStatus("idle");
+				setExportKind(null);
 				setExportError(null);
 			} else {
 				setExportStatus("error");
@@ -639,6 +691,94 @@ export function useGenomicAudio() {
 			setExportProgress(0);
 		}
 	}, [buildDownloadStem, sequence]);
+
+	const exportMp4 = useCallback(async () => {
+		if (
+			!sequence ||
+			sequence.events.length === 0 ||
+			!videoExportBridge
+		) {
+			return;
+		}
+
+		stopVoicePreview();
+		partRef.current?.stop();
+		setPlaybackSeconds(0);
+		setAudioEnergy(0);
+		setIsPlaying(false);
+
+		const abortController = new AbortController();
+		const abortWhenHidden = () => {
+			if (document.hidden && !abortController.signal.aborted) {
+				abortController.abort(
+					new Error("Video export stopped because the tab was hidden."),
+				);
+			}
+		};
+		exportAbortControllerRef.current?.abort();
+		exportAbortControllerRef.current = abortController;
+		document.addEventListener("visibilitychange", abortWhenHidden);
+		abortWhenHidden();
+		setExportStatus("exporting");
+		setExportKind("mp4");
+		setExportError(null);
+		setExportStage("rendering-audio");
+		setExportProgress(0);
+
+		try {
+			const { exportSequenceToMp4 } = await import("@/audio/export-mp4");
+			hasLoadedEncoderRef.current = true;
+			const blob = await exportSequenceToMp4(sequence, {
+				aspectRatio: videoAspectRatio,
+				quality: videoQuality,
+				signal: abortController.signal,
+				prepareScene: videoExportBridge.prepareScene,
+				releaseScene: videoExportBridge.releaseScene,
+				onVisualEnergy: videoExportBridge.onVisualEnergy,
+				onProgress: (progress) => {
+					setExportStage(progress.stage);
+					setExportProgress(progress.progress);
+				},
+			});
+
+			downloadBlob(blob, `${buildDownloadStem()}.mp4`);
+			setExportStatus("done");
+		} catch (error) {
+			if (
+				abortController.signal.aborted &&
+				abortController.signal.reason instanceof DOMException &&
+				abortController.signal.reason.name === "AbortError"
+			) {
+				setExportStatus("idle");
+				setExportKind(null);
+				setExportError(null);
+			} else {
+				setExportStatus("error");
+				setExportError(
+					stringifyUnknownError(
+						abortController.signal.aborted
+							? abortController.signal.reason
+							: error,
+					),
+				);
+			}
+		} finally {
+			document.removeEventListener("visibilitychange", abortWhenHidden);
+			if (exportAbortControllerRef.current === abortController) {
+				exportAbortControllerRef.current = null;
+			}
+
+			setExportStage(null);
+			setExportProgress(0);
+		}
+	}, [
+		buildDownloadStem,
+		sequence,
+		stopVoicePreview,
+		videoAspectRatio,
+		videoExportBridge,
+		videoQuality,
+	]);
 
 	const exportMidi = useCallback(async () => {
 		if (!sequence || sequence.events.length === 0) {
@@ -658,7 +798,7 @@ export function useGenomicAudio() {
 
 	const cancelExport = useCallback(() => {
 		exportAbortControllerRef.current?.abort(
-			new DOMException("MP3 export was cancelled.", "AbortError"),
+			new DOMException("Export was cancelled.", "AbortError"),
 		);
 	}, []);
 
@@ -711,8 +851,8 @@ export function useGenomicAudio() {
 			disposeSignalChain();
 
 			if (hasLoadedEncoderRef.current) {
-				void import("@/audio/export-mp3").then(({ terminateMp3Encoder }) => {
-					terminateMp3Encoder();
+				void import("@/audio/export-media").then(({ resetMediaEncoder }) => {
+					resetMediaEncoder();
 				});
 			}
 		};
@@ -760,11 +900,18 @@ export function useGenomicAudio() {
 		playbackTriggerCount,
 		audioContextState,
 		exportStatus,
+		exportKind,
 		exportStage,
 		exportProgress,
 		exportError,
 		exportMp3,
+		exportMp4,
 		exportMidi,
+		isVideoExportSupported,
+		videoAspectRatio,
+		setVideoAspectRatio,
+		videoQuality,
+		setVideoQuality,
 		cancelExport,
 	};
 }
