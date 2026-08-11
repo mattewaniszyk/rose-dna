@@ -98,8 +98,7 @@ function createBareMetalEnvironmentTexture(pmremGenerator: PMREMGenerator) {
 		softMaterial,
 		mutedMaterial,
 		ribbonMaterial,
-	] =
-		materials;
+	] = materials;
 	const geometries = [
 		boxGeometry,
 		topPanelGeometry,
@@ -232,29 +231,49 @@ function SceneEnvironment({ roseMaterialPreset }: SceneEnvironmentProps) {
 type SuspendedRoseProps = {
 	roseAnglePreset: RoseAnglePreset;
 	roseMaterialPreset: RoseMaterialPreset;
+	audioEnergy: number;
 };
 
 function SuspendedRose({
 	roseAnglePreset,
 	roseMaterialPreset,
+	audioEnergy,
 }: SuspendedRoseProps) {
 	const floatRef = useRef<Group>(null);
 	const pivotRef = useRef<Group>(null);
+	const floatPhaseRef = useRef<number | null>(null);
+	const smoothedEnergyRef = useRef(0);
 	const [tiltX, tiltY, tiltZ] = ROSE_ANGLE_PRESET_ROTATIONS[roseAnglePreset];
 
 	useFrame(({ clock }, delta) => {
 		const elapsed = clock.elapsedTime;
 		const baseY = roseAnglePreset === "top-down" ? -0.2 : -0.58;
+		const targetEnergy = Math.min(Math.max(audioEnergy, 0), 1);
+		const smoothing = 1 - Math.exp(-delta * 7);
+
+		smoothedEnergyRef.current +=
+			(targetEnergy - smoothedEnergyRef.current) * smoothing;
+
+		const pulse = smoothedEnergyRef.current;
+		const orbitSpeed = 0.18 + pulse * 0.32;
+		const floatAmount = 0.04 + pulse * 0.018;
+		const wobble = 0.012 + pulse * 0.008;
+
+		if (floatPhaseRef.current === null) {
+			floatPhaseRef.current = elapsed * 0.72;
+		} else {
+			floatPhaseRef.current += delta * (0.72 + pulse * 0.18);
+		}
 
 		if (floatRef.current) {
 			floatRef.current.position.y =
-				baseY + Math.sin(elapsed * 0.72) * 0.04;
-			floatRef.current.rotation.x = Math.sin(elapsed * 0.26) * 0.012;
-			floatRef.current.rotation.z = Math.cos(elapsed * 0.24) * 0.01;
+				baseY + Math.sin(floatPhaseRef.current) * floatAmount;
+			floatRef.current.rotation.x = Math.sin(elapsed * 0.26) * wobble;
+			floatRef.current.rotation.z = Math.cos(elapsed * 0.24) * wobble;
 		}
 
 		if (pivotRef.current) {
-			pivotRef.current.rotation.y += delta * 0.18;
+			pivotRef.current.rotation.y += delta * orbitSpeed;
 		}
 	});
 
@@ -274,6 +293,7 @@ type RoseSceneProps = {
 	overlayEffect: OverlayEffect;
 	roseAnglePreset: RoseAnglePreset;
 	roseMaterialPreset: RoseMaterialPreset;
+	audioEnergy?: number;
 };
 
 export function RoseScene({
@@ -281,6 +301,7 @@ export function RoseScene({
 	overlayEffect,
 	roseAnglePreset,
 	roseMaterialPreset,
+	audioEnergy = 0,
 }: RoseSceneProps) {
 	const fogColor = backgroundMode === "black" ? "#000000" : "#020102";
 	const usesBiolumeBloom =
@@ -292,7 +313,8 @@ export function RoseScene({
 	// The black mode is already opaque through Skybox, so only the Unicorn
 	// backgrounds need capturing into the scene for the effects to reach them.
 	const needsBackdrop =
-		hasActiveOverlay && Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
+		hasActiveOverlay &&
+		Boolean(BACKGROUND_MODE_PROJECT_IDS[backgroundMode]);
 	const isGlass = isGlassPreset(roseMaterialPreset);
 	const dimStudioLit = isDimStudioLitPreset(roseMaterialPreset);
 	const hemisphereIntensity = dimStudioLit
@@ -359,7 +381,10 @@ export function RoseScene({
 				{hasActiveOverlay ? (
 					<OverlayEffects
 						overlayEffect={
-							activeOverlayEffect as Exclude<OverlayEffect, "none">
+							activeOverlayEffect as Exclude<
+								OverlayEffect,
+								"none"
+							>
 						}
 					/>
 				) : null}
@@ -391,6 +416,7 @@ export function RoseScene({
 					<SuspendedRose
 						roseAnglePreset={roseAnglePreset}
 						roseMaterialPreset={roseMaterialPreset}
+						audioEnergy={audioEnergy}
 					/>
 				</Suspense>
 			</Canvas>
