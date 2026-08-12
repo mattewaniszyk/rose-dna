@@ -1,5 +1,12 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import {
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	type RefObject,
+} from "react";
 import {
 	BackSide,
 	BoxGeometry,
@@ -232,12 +239,16 @@ type SuspendedRoseProps = {
 	roseAnglePreset: RoseAnglePreset;
 	roseMaterialPreset: RoseMaterialPreset;
 	audioEnergy: number;
+	captureAudioEnergyRef: RefObject<number>;
+	videoCaptureActive: boolean;
 };
 
 function SuspendedRose({
 	roseAnglePreset,
 	roseMaterialPreset,
 	audioEnergy,
+	captureAudioEnergyRef,
+	videoCaptureActive,
 }: SuspendedRoseProps) {
 	const floatRef = useRef<Group>(null);
 	const pivotRef = useRef<Group>(null);
@@ -248,7 +259,10 @@ function SuspendedRose({
 	useFrame(({ clock }, delta) => {
 		const elapsed = clock.elapsedTime;
 		const baseY = roseAnglePreset === "top-down" ? -0.2 : -0.58;
-		const targetEnergy = Math.min(Math.max(audioEnergy, 0), 1);
+		const currentEnergy = videoCaptureActive
+			? captureAudioEnergyRef.current
+			: audioEnergy;
+		const targetEnergy = Math.min(Math.max(currentEnergy, 0), 1);
 		const smoothing = 1 - Math.exp(-delta * 7);
 
 		smoothedEnergyRef.current +=
@@ -288,6 +302,59 @@ function SuspendedRose({
 	);
 }
 
+export type RoseSceneCaptureController = {
+	canvas: HTMLCanvasElement;
+	renderFrame: (elapsedSeconds: number, audioEnergy: number) => void;
+	resetTimeline: () => void;
+};
+
+type SceneCaptureControllerProps = {
+	active: boolean;
+	audioEnergyRef: RefObject<number>;
+	onChange?: (controller: RoseSceneCaptureController | null) => void;
+};
+
+function SceneCaptureController({
+	active,
+	audioEnergyRef,
+	onChange,
+}: SceneCaptureControllerProps) {
+	const { advance, gl, setFrameloop } = useThree();
+
+	useEffect(() => {
+		if (!active) {
+			onChange?.(null);
+			return;
+		}
+
+		setFrameloop("never");
+
+		const controller: RoseSceneCaptureController = {
+			canvas: gl.domElement,
+			renderFrame: (elapsedSeconds, audioEnergy) => {
+				audioEnergyRef.current = audioEnergy;
+				advance(elapsedSeconds, true);
+			},
+			resetTimeline: () => {
+				audioEnergyRef.current = 0;
+				// Calling this again intentionally resets the manual clock to zero
+				// after the scene/backdrop warm-up frames.
+				setFrameloop("never");
+			},
+		};
+
+		onChange?.(controller);
+
+		return () => {
+			audioEnergyRef.current = 0;
+			onChange?.(null);
+			setFrameloop("always");
+		};
+	}, [active, advance, audioEnergyRef, gl, onChange, setFrameloop]);
+
+	return null;
+}
+
 type RoseSceneProps = {
 	backgroundMode: BackgroundMode;
 	overlayEffect: OverlayEffect;
@@ -297,6 +364,9 @@ type RoseSceneProps = {
 	videoCaptureActive?: boolean;
 	videoCapturePixelRatio?: number;
 	onSceneCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
+	onSceneCaptureControllerChange?: (
+		controller: RoseSceneCaptureController | null,
+	) => void;
 	onBackdropReadyChange?: (ready: boolean) => void;
 };
 
@@ -309,8 +379,16 @@ export function RoseScene({
 	videoCaptureActive = false,
 	videoCapturePixelRatio = 1,
 	onSceneCanvasChange,
+	onSceneCaptureControllerChange,
 	onBackdropReadyChange,
 }: RoseSceneProps) {
+	const captureAudioEnergyRef = useRef(0);
+	const handleCaptureControllerChange = useCallback(
+		(controller: RoseSceneCaptureController | null) => {
+			onSceneCaptureControllerChange?.(controller);
+		},
+		[onSceneCaptureControllerChange],
+	);
 	const fogColor = backgroundMode === "black" ? "#000000" : "#020102";
 	const usesBiolumeBloom =
 		roseMaterialPreset === "bioluminescent" && overlayEffect === "none";
@@ -373,6 +451,7 @@ export function RoseScene({
 			<Canvas
 				camera={{ position: [0.2, 0.55, 8.9], fov: 34 }}
 				dpr={videoCaptureActive ? videoCapturePixelRatio : [1, 2]}
+				frameloop={videoCaptureActive ? "never" : "always"}
 				gl={{ alpha: true }}
 				onCreated={({ camera, gl }) => {
 					gl.setClearAlpha(0);
@@ -381,6 +460,11 @@ export function RoseScene({
 				}}
 				style={{ background: "transparent" }}
 			>
+				<SceneCaptureController
+					active={videoCaptureActive}
+					audioEnergyRef={captureAudioEnergyRef}
+					onChange={handleCaptureControllerChange}
+				/>
 				<fog attach="fog" args={[fogColor, 12, 20]} />
 				<SceneEnvironment roseMaterialPreset={roseMaterialPreset} />
 				{/* Glass uses canvas alpha to reveal the DOM backdrop, so skip the
@@ -428,6 +512,8 @@ export function RoseScene({
 						roseAnglePreset={roseAnglePreset}
 						roseMaterialPreset={roseMaterialPreset}
 						audioEnergy={audioEnergy}
+						captureAudioEnergyRef={captureAudioEnergyRef}
+						videoCaptureActive={videoCaptureActive}
 					/>
 				</Suspense>
 			</Canvas>

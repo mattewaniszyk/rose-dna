@@ -43,8 +43,9 @@ import type { GenomicVoice } from "@/audio/voice-types";
 import {
 	DEFAULT_VIDEO_ASPECT_RATIO,
 	DEFAULT_VIDEO_QUALITY_PRESET,
-	type VideoCaptureRequest,
 	type VideoAspectRatio,
+	type VideoCaptureRequest,
+	type VideoCaptureSession,
 	type VideoQualityPreset,
 } from "@/audio/video-export-options";
 
@@ -55,9 +56,7 @@ type VideoExportBridge = {
 	prepareScene: (
 		request: VideoCaptureRequest,
 		signal?: AbortSignal,
-	) => Promise<HTMLCanvasElement>;
-	releaseScene: () => void;
-	onVisualEnergy: (energy: number) => void;
+	) => Promise<VideoCaptureSession>;
 };
 
 function clampInt(value: number, min: number, max: number) {
@@ -733,8 +732,6 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 				quality: videoQuality,
 				signal: abortController.signal,
 				prepareScene: videoExportBridge.prepareScene,
-				releaseScene: videoExportBridge.releaseScene,
-				onVisualEnergy: videoExportBridge.onVisualEnergy,
 				onProgress: (progress) => {
 					setExportStage(progress.stage);
 					setExportProgress(progress.progress);

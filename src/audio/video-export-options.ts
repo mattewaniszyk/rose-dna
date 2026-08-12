@@ -34,6 +34,12 @@ export type VideoCaptureRequest = {
 	maxPixelRatio: number;
 };
 
+export type VideoCaptureSession = {
+	canvas: HTMLCanvasElement;
+	renderFrame: (elapsedSeconds: number, audioEnergy: number) => void;
+	release: () => void;
+};
+
 export function getCapturePixelRatio(
 	request: VideoCaptureRequest,
 	sourceWidth: number,

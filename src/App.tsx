@@ -9,22 +9,27 @@ import {
 import type { OverlayEffect } from "./components/overlay-effect";
 import type { RoseAnglePreset } from "./components/rose-angle";
 import type { RoseMaterialPreset } from "./components/rose-material";
-import { RoseScene } from "./components/RoseScene";
+import {
+	RoseScene,
+	type RoseSceneCaptureController,
+} from "./components/RoseScene";
 import { UnicornBackground } from "./components/UnicornBackground";
 import { useGenomicAudio } from "./hooks/useGenomicAudio";
 import {
 	getCapturePixelRatio,
 	type VideoCaptureRequest,
+	type VideoCaptureSession,
 } from "./audio/video-export-options";
 
 function waitForSceneCapture(
-	getCanvas: () => HTMLCanvasElement | null,
+	getController: () => RoseSceneCaptureController | null,
 	isBackdropReady: () => boolean,
 	signal?: AbortSignal,
 ) {
-	return new Promise<HTMLCanvasElement>((resolve, reject) => {
+	return new Promise<RoseSceneCaptureController>((resolve, reject) => {
 		let animationFrame = 0;
 		let readyFrameCount = 0;
+		let warmupFrameCount = 0;
 		const startedAt = performance.now();
 
 		const cleanup = () => {
@@ -42,14 +47,25 @@ function waitForSceneCapture(
 		};
 
 		const poll = (timestamp: number) => {
-			const canvas = getCanvas();
+			const controller = getController();
 
-			if (canvas && canvas.width > 0 && canvas.height > 0 && isBackdropReady()) {
+			if (controller) {
+				controller.renderFrame(warmupFrameCount / 30, 0);
+				warmupFrameCount += 1;
+			}
+
+			if (
+				controller &&
+				controller.canvas.width > 0 &&
+				controller.canvas.height > 0 &&
+				isBackdropReady()
+			) {
 				readyFrameCount += 1;
 
 				if (readyFrameCount >= 2) {
 					cleanup();
-					resolve(canvas);
+					controller.resetTimeline();
+					resolve(controller);
 					return;
 				}
 			} else {
@@ -88,57 +104,59 @@ function App() {
 		useState<RoseMaterialPreset>("default");
 	const [overlayEffect, setOverlayEffect] = useState<OverlayEffect>("none");
 	const unicornProjectId = BACKGROUND_MODE_PROJECT_IDS[backgroundMode];
-	const sceneCanvasRef = useRef<HTMLCanvasElement | null>(null);
+	const sceneCaptureControllerRef =
+		useRef<RoseSceneCaptureController | null>(null);
 	const backdropReadyRef = useRef(false);
 	const requiresBackdropRef = useRef(Boolean(unicornProjectId));
 	const [isVideoCaptureActive, setIsVideoCaptureActive] = useState(false);
-	const [videoCaptureEnergy, setVideoCaptureEnergy] = useState(0);
 	const [videoCapturePixelRatio, setVideoCapturePixelRatio] = useState(1);
 	requiresBackdropRef.current = Boolean(unicornProjectId);
-	const handleSceneCanvasChange = useCallback(
-		(canvas: HTMLCanvasElement | null) => {
-			sceneCanvasRef.current = canvas;
+	const handleBackdropReadyChange = useCallback((ready: boolean) => {
+		backdropReadyRef.current = ready;
+	}, []);
+	const handleSceneCaptureControllerChange = useCallback(
+		(controller: RoseSceneCaptureController | null) => {
+			sceneCaptureControllerRef.current = controller;
 		},
 		[],
 	);
-	const handleBackdropReadyChange = useCallback((ready: boolean) => {
-		backdropReadyRef.current = ready;
+	const releaseVideoScene = useCallback(() => {
+		setIsVideoCaptureActive(false);
+		setVideoCapturePixelRatio(1);
 	}, []);
 
 	const prepareVideoScene = useCallback(async (
 		request: VideoCaptureRequest,
 		signal?: AbortSignal,
-	) => {
+	): Promise<VideoCaptureSession> => {
 		setVideoCapturePixelRatio(
 			getCapturePixelRatio(request, window.innerWidth, window.innerHeight),
 		);
 		setIsVideoCaptureActive(true);
 
 		try {
-			return await waitForSceneCapture(
-				() => sceneCanvasRef.current,
+			const controller = await waitForSceneCapture(
+				() => sceneCaptureControllerRef.current,
 				() =>
 					!requiresBackdropRef.current || backdropReadyRef.current,
 				signal,
 			);
+
+			return {
+				canvas: controller.canvas,
+				renderFrame: controller.renderFrame,
+				release: releaseVideoScene,
+			};
 		} catch (error) {
-			setIsVideoCaptureActive(false);
-			setVideoCapturePixelRatio(1);
+			releaseVideoScene();
 			throw error;
 		}
-	}, []);
-	const releaseVideoScene = useCallback(() => {
-		setIsVideoCaptureActive(false);
-		setVideoCaptureEnergy(0);
-		setVideoCapturePixelRatio(1);
-	}, []);
+	}, [releaseVideoScene]);
 	const videoExportBridge = useMemo(
 		() => ({
 			prepareScene: prepareVideoScene,
-			releaseScene: releaseVideoScene,
-			onVisualEnergy: setVideoCaptureEnergy,
 		}),
-		[prepareVideoScene, releaseVideoScene],
+		[prepareVideoScene],
 	);
 	const genomicAudio = useGenomicAudio(videoExportBridge);
 	const isExporting = genomicAudio.exportStatus === "exporting";
@@ -156,14 +174,12 @@ function App() {
 				overlayEffect={overlayEffect}
 				roseAnglePreset={roseAnglePreset}
 				roseMaterialPreset={roseMaterialPreset}
-				audioEnergy={
-					isVideoCaptureActive
-						? videoCaptureEnergy
-						: genomicAudio.audioEnergy
-				}
+				audioEnergy={genomicAudio.audioEnergy}
 				videoCaptureActive={isVideoCaptureActive}
 				videoCapturePixelRatio={videoCapturePixelRatio}
-				onSceneCanvasChange={handleSceneCanvasChange}
+				onSceneCaptureControllerChange={
+					handleSceneCaptureControllerChange
+				}
 				onBackdropReadyChange={handleBackdropReadyChange}
 			/>
 			<div className="app-overlay">

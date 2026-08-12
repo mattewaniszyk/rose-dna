@@ -16,10 +16,12 @@ import {
 	VIDEO_QUALITY_CONFIGS,
 	type VideoAspectRatio,
 	type VideoCaptureRequest,
+	type VideoCaptureSession,
 	type VideoQualityPreset,
 } from "./video-export-options";
 
 const VIDEO_FRAME_RATE = 30;
+const PROGRESS_UPDATE_INTERVAL_FRAMES = 6;
 const VIDEO_MIME_TYPES = [
 	"video/webm;codecs=vp9",
 	"video/webm;codecs=vp8",
@@ -35,9 +37,7 @@ type Mp4ExportOptions = {
 	prepareScene: (
 		request: VideoCaptureRequest,
 		signal?: AbortSignal,
-	) => Promise<HTMLCanvasElement>;
-	releaseScene: () => void;
-	onVisualEnergy: (energy: number) => void;
+	) => Promise<VideoCaptureSession>;
 };
 
 type RecordCanvasOptions = {
@@ -46,7 +46,10 @@ type RecordCanvasOptions = {
 	recordingBitRate?: number;
 	signal?: AbortSignal;
 	onProgress?: (progress: number) => void;
-	onVisualEnergy: (energy: number) => void;
+};
+
+type ManualCanvasCaptureTrack = MediaStreamTrack & {
+	requestFrame?: () => void;
 };
 
 export function getSupportedVideoMimeType() {
@@ -123,10 +126,11 @@ function getEnvelopeEnergy(
 }
 
 export async function recordCanvas(
-	canvas: HTMLCanvasElement,
+	session: Pick<VideoCaptureSession, "canvas" | "renderFrame">,
 	options: RecordCanvasOptions,
 ) {
 	const mimeType = getSupportedVideoMimeType();
+	const { canvas } = session;
 
 	if (!mimeType || typeof canvas.captureStream !== "function") {
 		throw new Error(
@@ -141,9 +145,27 @@ export async function recordCanvas(
 	throwIfAborted(options.signal, "MP4 export was cancelled.");
 
 	return await new Promise<Blob>((resolve, reject) => {
-		const stream = canvas.captureStream(VIDEO_FRAME_RATE);
+		// A zero frame-rate stream only captures when requestFrame is called. This
+		// decouples video time from wall time when rendering takes longer than 1/30s.
+		const stream = canvas.captureStream(0);
+		const videoTrack = stream.getVideoTracks()[0] as
+			| ManualCanvasCaptureTrack
+			| undefined;
 		const chunks: Blob[] = [];
 		let recorder: MediaRecorder;
+
+		if (!videoTrack || typeof videoTrack.requestFrame !== "function") {
+			for (const track of stream.getTracks()) {
+				track.stop();
+			}
+
+			reject(
+				new Error(
+					"MP4 export requires manual canvas capture in desktop Chrome or Edge.",
+				),
+			);
+			return;
+		}
 
 		try {
 			recorder = new MediaRecorder(stream, {
@@ -160,21 +182,20 @@ export async function recordCanvas(
 			reject(error);
 			return;
 		}
-		let animationFrame = 0;
-		let stopTimer = 0;
+		let frameTimer = 0;
+		let finishFrameWait: (() => void) | null = null;
 		let settled = false;
 		let terminalError: Error | null = null;
-		const startedAt = performance.now();
 
 		const cleanup = () => {
-			window.cancelAnimationFrame(animationFrame);
-			window.clearTimeout(stopTimer);
+			window.clearTimeout(frameTimer);
+			finishFrameWait?.();
+			finishFrameWait = null;
 			options.signal?.removeEventListener("abort", onAbort);
 			document.removeEventListener("visibilitychange", onVisibilityChange);
 			for (const track of stream.getTracks()) {
 				track.stop();
 			}
-			options.onVisualEnergy(0);
 		};
 
 		const settleWithError = (error: Error) => {
@@ -209,19 +230,79 @@ export async function recordCanvas(
 			}
 		};
 
-		const tick = (timestamp: number) => {
-			const elapsedSeconds = Math.min(
-				options.durationSeconds,
-				(timestamp - startedAt) / 1000,
-			);
+		const waitUntil = (deadline: number) => {
+			return new Promise<void>((resolveWait) => {
+				const finish = () => {
+					if (finishFrameWait !== finish) {
+						return;
+					}
 
-			options.onVisualEnergy(
-				getEnvelopeEnergy(options.energyEnvelope, elapsedSeconds),
+					finishFrameWait = null;
+					resolveWait();
+				};
+
+				finishFrameWait = finish;
+				frameTimer = window.setTimeout(
+					finish,
+					Math.max(0, deadline - performance.now()),
+				);
+			});
+		};
+
+		const captureFrames = async () => {
+			const frameCount = Math.max(
+				1,
+				Math.ceil(options.durationSeconds * VIDEO_FRAME_RATE),
 			);
-			options.onProgress?.(
-				clamp(elapsedSeconds / options.durationSeconds, 0, 1),
-			);
-			animationFrame = window.requestAnimationFrame(tick);
+			const frameDurationMs = 1_000 / VIDEO_FRAME_RATE;
+			const startedAt = performance.now();
+
+			try {
+				for (let frame = 0; frame < frameCount; frame += 1) {
+					if (frame > 0) {
+						await waitUntil(startedAt + frame * frameDurationMs);
+					}
+
+					if (settled) {
+						return;
+					}
+
+					throwIfAborted(options.signal, "MP4 export was cancelled.");
+
+					const elapsedSeconds = frame / VIDEO_FRAME_RATE;
+					session.renderFrame(
+						elapsedSeconds,
+						getEnvelopeEnergy(options.energyEnvelope, elapsedSeconds),
+					);
+					videoTrack.requestFrame?.();
+
+					const completedFrames = frame + 1;
+					if (
+						completedFrames < frameCount &&
+						completedFrames % PROGRESS_UPDATE_INTERVAL_FRAMES === 0
+					) {
+						options.onProgress?.(completedFrames / frameCount);
+					}
+				}
+
+				// Hold the final requested frame for one frame interval so the native
+				// recorder has a task boundary in which to enqueue it before stop().
+				await waitUntil(startedAt + frameCount * frameDurationMs);
+
+				if (settled) {
+					return;
+				}
+
+				if (recorder.state !== "inactive") {
+					recorder.stop();
+				}
+			} catch (error) {
+				settleWithError(
+					error instanceof Error
+						? error
+						: new Error("The browser could not capture the scene frames."),
+				);
+			}
 		};
 
 		recorder.addEventListener("dataavailable", (event) => {
@@ -231,6 +312,9 @@ export async function recordCanvas(
 		});
 		recorder.addEventListener("error", () => {
 			settleWithError(new Error("The browser could not record the scene."));
+		});
+		recorder.addEventListener("start", () => {
+			void captureFrames();
 		});
 		recorder.addEventListener("stop", () => {
 			if (settled) {
@@ -256,17 +340,10 @@ export async function recordCanvas(
 
 		options.signal?.addEventListener("abort", onAbort, { once: true });
 		document.addEventListener("visibilitychange", onVisibilityChange);
-		options.onVisualEnergy(getEnvelopeEnergy(options.energyEnvelope, 0));
 		options.onProgress?.(0);
 
 		try {
 			recorder.start(1_000);
-			animationFrame = window.requestAnimationFrame(tick);
-			stopTimer = window.setTimeout(() => {
-				if (recorder.state !== "inactive") {
-					recorder.stop();
-				}
-			}, options.durationSeconds * 1000);
 		} catch (error) {
 			settleWithError(
 				error instanceof Error
@@ -298,7 +375,7 @@ export async function exportSequenceToMp4(
 	}
 
 	let ffmpeg: FFmpeg | null = null;
-	let scenePrepared = false;
+	let captureSession: VideoCaptureSession | null = null;
 	const aspectRatio = options.aspectRatio ?? DEFAULT_VIDEO_ASPECT_RATIO;
 	const output = VIDEO_ASPECT_RATIO_CONFIGS[aspectRatio];
 	const quality =
@@ -317,7 +394,7 @@ export async function exportSequenceToMp4(
 		options.onProgress?.({ stage: "rendering-audio", progress: 1 });
 
 		options.onProgress?.({ stage: "preparing-scene", progress: 0 });
-		const canvas = await options.prepareScene(
+		captureSession = await options.prepareScene(
 			{
 				width: output.width,
 				height: output.height,
@@ -325,24 +402,21 @@ export async function exportSequenceToMp4(
 			},
 			options.signal,
 		);
-		scenePrepared = true;
 		throwIfAborted(options.signal, "MP4 export was cancelled.");
 		options.onProgress?.({ stage: "preparing-scene", progress: 1 });
 
 		options.onProgress?.({ stage: "recording-video", progress: 0 });
-		const recording = await recordCanvas(canvas, {
+		const recording = await recordCanvas(captureSession, {
 			durationSeconds: sequence.runtimeSeconds,
 			energyEnvelope,
 			recordingBitRate: quality.recordingBitRate,
 			signal: options.signal,
-			onVisualEnergy: options.onVisualEnergy,
 			onProgress: (progress) =>
 				options.onProgress?.({ stage: "recording-video", progress }),
 		});
 
-		options.releaseScene();
-		scenePrepared = false;
-		options.onVisualEnergy(0);
+		captureSession.release();
+		captureSession = null;
 		throwIfAborted(options.signal, "MP4 export was cancelled.");
 
 		options.onProgress?.({ stage: "loading-encoder", progress: 0 });
@@ -382,6 +456,7 @@ export async function exportSequenceToMp4(
 
 			const duration = sequence.runtimeSeconds.toFixed(3);
 			const videoFilter = [
+				`setpts=N/(${VIDEO_FRAME_RATE}*TB)`,
 				`scale=${output.width}:${output.height}:force_original_aspect_ratio=increase`,
 				`crop=${output.width}:${output.height}`,
 				"setsar=1",
@@ -468,10 +543,6 @@ export async function exportSequenceToMp4(
 
 		throw error;
 	} finally {
-		if (scenePrepared) {
-			options.releaseScene();
-		}
-
-		options.onVisualEnergy(0);
+		captureSession?.release();
 	}
 }

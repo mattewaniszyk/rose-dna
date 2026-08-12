@@ -8,7 +8,9 @@ const mockState = vi.hoisted(() => ({
 	invalidOutputCount: 0,
 	recorders: [] as Array<{ state: string; stop: () => void }>,
 	recorderOptions: [] as Array<{ videoBitsPerSecond?: number }>,
+	captureFrameRates: [] as number[],
 	trackStop: vi.fn(),
+	trackRequestFrame: vi.fn(),
 }));
 
 vi.mock("@ffmpeg/ffmpeg", () => ({
@@ -106,6 +108,10 @@ class MockMediaRecorder {
 
 	start() {
 		this.state = "recording";
+
+		for (const callback of this.listeners.get("start") ?? []) {
+			callback({ data: new Blob() });
+		}
 	}
 
 	stop() {
@@ -129,9 +135,16 @@ class MockCanvas {
 	width = 1280;
 	height = 720;
 
-	captureStream() {
+	captureStream(frameRate: number) {
+		mockState.captureFrameRates.push(frameRate);
+		const track = {
+			stop: mockState.trackStop,
+			requestFrame: mockState.trackRequestFrame,
+		};
+
 		return {
-			getTracks: () => [{ stop: mockState.trackStop }],
+			getTracks: () => [track],
+			getVideoTracks: () => [track],
 		};
 	}
 }
@@ -165,7 +178,21 @@ import {
 	recordCanvas,
 } from "./export-mp4";
 import { resetMediaEncoder } from "./export-media";
-import { getCapturePixelRatio } from "./video-export-options";
+import {
+	getCapturePixelRatio,
+	type VideoCaptureSession,
+} from "./video-export-options";
+
+function createCaptureSession(
+	overrides: Partial<VideoCaptureSession> = {},
+): VideoCaptureSession {
+	return {
+		canvas: new MockCanvas() as unknown as HTMLCanvasElement,
+		renderFrame: vi.fn(),
+		release: vi.fn(),
+		...overrides,
+	};
+}
 
 describe("MP4 export", () => {
 	beforeEach(() => {
@@ -188,7 +215,9 @@ describe("MP4 export", () => {
 		mockState.invalidOutputCount = 0;
 		mockState.recorders.length = 0;
 		mockState.recorderOptions.length = 0;
+		mockState.captureFrameRates.length = 0;
 		mockState.trackStop.mockClear();
+		mockState.trackRequestFrame.mockClear();
 		resetMediaEncoder();
 	});
 
@@ -239,36 +268,60 @@ describe("MP4 export", () => {
 		).toBe(1);
 	});
 
-	it("records for the requested duration and stops the capture track", async () => {
-		const promise = recordCanvas(
-			new MockCanvas() as unknown as HTMLCanvasElement,
-			{
-			durationSeconds: 0.03,
-			energyEnvelope: new Float32Array([0.5]),
-			onVisualEnergy: vi.fn(),
-			},
-		);
+	it("renders and requests every deterministic frame before stopping", async () => {
+		const renderFrame = vi.fn();
+		const promise = recordCanvas(createCaptureSession({ renderFrame }), {
+			durationSeconds: 0.11,
+			energyEnvelope: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+		});
 
-		await vi.advanceTimersByTimeAsync(29);
-		expect(mockState.recorders[0]?.state).toBe("recording");
-		await vi.advanceTimersByTimeAsync(1);
+		await vi.advanceTimersByTimeAsync(134);
 
 		await expect(promise).resolves.toBeInstanceOf(Blob);
+		expect(mockState.captureFrameRates).toEqual([0]);
+		expect(mockState.trackRequestFrame).toHaveBeenCalledTimes(4);
+		expect(renderFrame.mock.calls).toEqual([
+			[0, expect.closeTo(0.1)],
+			[1 / 30, expect.closeTo(0.2)],
+			[2 / 30, expect.closeTo(0.3)],
+			[3 / 30, expect.closeTo(0.4)],
+		]);
 		expect(mockState.trackStop).toHaveBeenCalledOnce();
 	});
 
-	it("stops the recorder, capture track, and visual pulse when cancelled", async () => {
+	it("keeps frame timestamps deterministic when rendering falls behind", async () => {
+		let wallTime = 0;
+		const nowSpy = vi
+			.spyOn(performance, "now")
+			.mockImplementation(() => wallTime);
+		const renderFrame = vi.fn((_elapsedSeconds: number, _energy: number) => {
+			wallTime += 75;
+		});
+		const promise = recordCanvas(createCaptureSession({ renderFrame }), {
+			durationSeconds: 0.1,
+			energyEnvelope: new Float32Array([0.2, 0.4, 0.6]),
+		});
+
+		await vi.runAllTimersAsync();
+		await expect(promise).resolves.toBeInstanceOf(Blob);
+
+		expect(renderFrame.mock.calls.map(([timestamp]) => timestamp)).toEqual([
+			0,
+			1 / 30,
+			2 / 30,
+		]);
+		expect(mockState.trackRequestFrame).toHaveBeenCalledTimes(3);
+		expect(wallTime).toBeGreaterThan(100);
+		nowSpy.mockRestore();
+	});
+
+	it("stops the recorder and capture track when cancelled", async () => {
 		const controller = new AbortController();
-		const onVisualEnergy = vi.fn();
-		const promise = recordCanvas(
-			new MockCanvas() as unknown as HTMLCanvasElement,
-			{
+		const promise = recordCanvas(createCaptureSession(), {
 			durationSeconds: 1,
 			energyEnvelope: new Float32Array([0.5]),
 			signal: controller.signal,
-			onVisualEnergy,
-			},
-		);
+		});
 		const expectation = expect(promise).rejects.toThrow("cancelled");
 
 		controller.abort(new DOMException("cancelled", "AbortError"));
@@ -276,22 +329,19 @@ describe("MP4 export", () => {
 
 		expect(mockState.recorders[0]?.state).toBe("inactive");
 		expect(mockState.trackStop).toHaveBeenCalledOnce();
-		expect(onVisualEnergy).toHaveBeenLastCalledWith(0);
 	});
 
 	it("creates a validated 1080p H.264/AAC MP4 and cleans temporary files", async () => {
 		const stages: string[] = [];
 		const releaseScene = vi.fn();
 		const promise = exportSequenceToMp4(sequence, {
-			prepareScene: vi.fn(
-				async () => new MockCanvas() as unknown as HTMLCanvasElement,
+			prepareScene: vi.fn(async () =>
+				createCaptureSession({ release: releaseScene }),
 			),
-			releaseScene,
-			onVisualEnergy: vi.fn(),
 			onProgress: ({ stage }) => stages.push(stage),
 		});
 
-		await vi.advanceTimersByTimeAsync(30);
+		await vi.advanceTimersByTimeAsync(40);
 		const blob = await promise;
 
 		expect(blob.type).toBe("video/mp4");
@@ -316,22 +366,19 @@ describe("MP4 export", () => {
 		);
 		expect(command.join(" ")).toContain("crop=1920:1080");
 		expect(command.join(" ")).toContain("setdar=16/9");
+		expect(command.join(" ")).toContain("setpts=N/(30*TB)");
 		expect(command[command.indexOf("-aspect") + 1]).toBe("16:9");
 	});
 
 	it("uses the selected portrait dimensions and display aspect", async () => {
-		const prepareScene = vi.fn(
-			async () => new MockCanvas() as unknown as HTMLCanvasElement,
-		);
+		const prepareScene = vi.fn(async () => createCaptureSession());
 		const promise = exportSequenceToMp4(sequence, {
 			aspectRatio: "9:16",
 			quality: "near-lossless",
 			prepareScene,
-			releaseScene: vi.fn(),
-			onVisualEnergy: vi.fn(),
 		});
 
-		await vi.advanceTimersByTimeAsync(30);
+		await vi.advanceTimersByTimeAsync(40);
 		await promise;
 
 		const command = mockState.commands[0] ?? [];
@@ -355,10 +402,9 @@ describe("MP4 export", () => {
 		expect(isMp4ExportSupported()).toBe(false);
 
 		await expect(
-			recordCanvas(new MockCanvas() as unknown as HTMLCanvasElement, {
+			recordCanvas(createCaptureSession(), {
 				durationSeconds: 1,
 				energyEnvelope: new Float32Array([0]),
-				onVisualEnergy: vi.fn(),
 			}),
 		).rejects.toThrow("Chrome or Edge");
 
@@ -367,11 +413,10 @@ describe("MP4 export", () => {
 		controller.abort(new DOMException("cancelled", "AbortError"));
 
 		await expect(
-			recordCanvas(new MockCanvas() as unknown as HTMLCanvasElement, {
+			recordCanvas(createCaptureSession(), {
 				durationSeconds: 1,
 				energyEnvelope: new Float32Array([0]),
 				signal: controller.signal,
-				onVisualEnergy: vi.fn(),
 			}),
 		).rejects.toThrow("cancelled");
 	});
@@ -379,22 +424,18 @@ describe("MP4 export", () => {
 	it("rejects invalid MP4 output and allows a clean retry", async () => {
 		mockState.invalidOutputCount = 1;
 		const options = {
-			prepareScene: vi.fn(
-				async () => new MockCanvas() as unknown as HTMLCanvasElement,
-			),
-			releaseScene: vi.fn(),
-			onVisualEnergy: vi.fn(),
+			prepareScene: vi.fn(async () => createCaptureSession()),
 		};
 
 		const first = exportSequenceToMp4(sequence, options);
 		const firstExpectation = expect(first).rejects.toThrow(
 			"invalid or empty MP4",
 		);
-		await vi.advanceTimersByTimeAsync(30);
+		await vi.advanceTimersByTimeAsync(40);
 		await firstExpectation;
 
 		const second = exportSequenceToMp4(sequence, options);
-		await vi.advanceTimersByTimeAsync(30);
+		await vi.advanceTimersByTimeAsync(40);
 		await expect(second).resolves.toBeInstanceOf(Blob);
 	});
 });
