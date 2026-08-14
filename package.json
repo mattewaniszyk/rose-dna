@@ -2,6 +2,7 @@
 	"name": "rose-dna",
 	"private": true,
 	"version": "0.0.0",
+	"license": "AGPL-3.0-or-later",
 	"type": "module",
 	"engines": {
 		"node": "^20.19.0 || >=22.12.0"
@@ -19,6 +20,8 @@
 		"@ffmpeg/ffmpeg": "^0.12.15",
 		"@fontsource-variable/geist": "^5.3.0",
 		"@react-three/fiber": "latest",
+		"@strudel/core": "1.2.6",
+		"@strudel/draw": "1.2.6",
 		"@tonejs/midi": "^2.0.28",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",

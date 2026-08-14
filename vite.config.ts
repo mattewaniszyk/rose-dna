@@ -30,8 +30,18 @@ export default defineConfig({
     host: '127.0.0.1',
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      {
+        find: /^@strudel\/core$/,
+        replacement: path.resolve(__dirname, './src/strudel-core-draw.ts'),
+      },
+      {
+        find: '@',
+        replacement: path.resolve(__dirname, './src'),
+      },
+    ],
+  },
+  ssr: {
+    noExternal: ['@strudel/draw'],
   },
 })

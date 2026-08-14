@@ -9,7 +9,7 @@ import type {
 	MediaExportStage,
 } from "@/audio/export-media";
 import { FASTQ_FIXTURES } from "@/audio/fixtures";
-import { loadFastqFixtureData } from "@/audio/fastq";
+import { loadAndMapFastqFixture } from "@/audio/load-map";
 import { mapDatasetToSequence } from "@/audio/mapping";
 import {
 	createSampledElectronicVoice,
@@ -96,6 +96,7 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 	const [isLoopEnabled, setIsLoopEnabled] = useState(true);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [playbackSeconds, setPlaybackSeconds] = useState(0);
+	const [playbackEventIndex, setPlaybackEventIndex] = useState<number | null>(null);
 	const [audioEnergy, setAudioEnergy] = useState(0);
 	const [playbackTriggerCount, setPlaybackTriggerCount] = useState(0);
 	const [audioContextState, setAudioContextState] = useState("not-started");
@@ -121,7 +122,10 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 	const previewVoiceRef = useRef<GenomicVoice | null>(null);
 	const previewTimerRef = useRef<number | null>(null);
 	const previewRequestIdRef = useRef(0);
+	const masterOutputRef = useRef<Tone.Gain | null>(null);
 	const meterRef = useRef<Tone.Meter | null>(null);
+	const waveformAnalyserRef = useRef<Tone.Analyser | null>(null);
+	const spectrumAnalyserRef = useRef<Tone.Analyser | null>(null);
 	const partRef = useRef<ScheduledGenomicPlayback | null>(null);
 	const exportAbortControllerRef = useRef<AbortController | null>(null);
 	const hasLoadedEncoderRef = useRef(false);
@@ -167,9 +171,24 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 			partRef.current = null;
 		}
 
+		if (masterOutputRef.current) {
+			masterOutputRef.current.dispose();
+			masterOutputRef.current = null;
+		}
+
 		if (meterRef.current) {
 			meterRef.current.dispose();
 			meterRef.current = null;
+		}
+
+		if (waveformAnalyserRef.current) {
+			waveformAnalyserRef.current.dispose();
+			waveformAnalyserRef.current = null;
+		}
+
+		if (spectrumAnalyserRef.current) {
+			spectrumAnalyserRef.current.dispose();
+			spectrumAnalyserRef.current = null;
 		}
 
 		disposeGenomicVoiceBank(voicesRef.current);
@@ -177,7 +196,11 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 	}, []);
 
 	const ensureSignalChain = useCallback(async (voiceSettings: VoiceSettingsByBase) => {
-		if (voicesRef.current && meterRef.current) {
+		if (
+			voicesRef.current &&
+			masterOutputRef.current &&
+			meterRef.current
+		) {
 			return voicesRef.current;
 		}
 
@@ -200,15 +223,26 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 				);
 			}
 
+			const masterOutput = new Tone.Gain(1);
 			const meter = new Tone.Meter({ normalRange: true, smoothing: 0.86 });
+			const waveformAnalyser = new Tone.Analyser("waveform", 1024);
+			const spectrumAnalyser = new Tone.Analyser("fft", 256);
 
 			for (const voice of Object.values(voices)) {
-				voice.connect(meter);
+				voice.connect(masterOutput);
 			}
 
-			meter.toDestination();
+			// Keep the audible route direct. Analysis nodes tap the bus in
+			// parallel so a visualization can never interrupt or attenuate audio.
+			masterOutput.toDestination();
+			masterOutput.connect(meter);
+			masterOutput.connect(waveformAnalyser);
+			masterOutput.connect(spectrumAnalyser);
 			voicesRef.current = voices;
+			masterOutputRef.current = masterOutput;
 			meterRef.current = meter;
+			waveformAnalyserRef.current = waveformAnalyser;
+			spectrumAnalyserRef.current = spectrumAnalyser;
 
 			return voices;
 		} finally {
@@ -286,15 +320,15 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 			setPreviewingBase(base);
 			partRef.current?.stop();
 			setPlaybackSeconds(0);
+			setPlaybackEventIndex(null);
 			setAudioEnergy(0);
 			setIsPlaying(false);
 
 			const settings =
 				mappingOptions.voiceSettings?.[base] ?? DEFAULT_VOICE_SETTINGS[base];
 			const family = VOICE_PRESET_DEFINITIONS[settings.preset].family;
+			await Tone.start();
 			const context = Tone.getContext();
-
-			await context.resume();
 
 			if (previewRequestIdRef.current !== requestId) {
 				return;
@@ -361,6 +395,7 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 	const resetTransport = useCallback(() => {
 		partRef.current?.stop();
 		setPlaybackSeconds(0);
+		setPlaybackEventIndex(null);
 		setAudioEnergy(0);
 		setIsPlaying(false);
 	}, []);
@@ -382,6 +417,7 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		setDataset(null);
 		setSequence(null);
 		setPlaybackTriggerCount(0);
+		setPlaybackEventIndex(null);
 		setBuildStatus("idle");
 		setBuildError(null);
 		setExportStatus("idle");
@@ -410,6 +446,7 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		exportAbortControllerRef.current?.abort();
 
 		setPlaybackTriggerCount(0);
+		setPlaybackEventIndex(null);
 		setBuildError(null);
 		setExportStatus("idle");
 		setExportKind(null);
@@ -531,10 +568,12 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		setExportError(null);
 
 		try {
-			const nextDataset = await loadFastqFixtureData(
-				selectedFixture,
-				parseOptions,
-			);
+			const { dataset: nextDataset, sequence: nextSequence } =
+				await loadAndMapFastqFixture(
+					selectedFixture,
+					parseOptions,
+					currentMappingOptionsRef.current,
+				);
 
 			if (
 				currentSourceConfigurationKeyRef.current !==
@@ -542,11 +581,6 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 			) {
 				return;
 			}
-
-			const nextSequence = mapDatasetToSequence(
-				nextDataset,
-				currentMappingOptionsRef.current,
-			);
 
 			resetSequencePlayback(nextSequence);
 			loadedSourceConfigurationKeyRef.current =
@@ -576,8 +610,8 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		setBuildError(null);
 
 		try {
+			await Tone.start();
 			const context = Tone.getContext();
-			await context.resume();
 			Tone.getDestination().mute = false;
 			Tone.getDestination().volume.value = 0;
 			setAudioContextState(context.state);
@@ -590,11 +624,13 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 				partRef.current = buildTonePart(
 					sequence,
 					voices,
-					() => {
+					(_event, eventIndex) => {
 						setPlaybackTriggerCount((current) => current + 1);
+						setPlaybackEventIndex(eventIndex);
 					},
 					() => {
 						setPlaybackSeconds(0);
+						setPlaybackEventIndex(null);
 						setAudioEnergy(0);
 						setIsPlaying(false);
 					},
@@ -631,6 +667,7 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		}
 
 		setPlaybackSeconds(0);
+		setPlaybackEventIndex(null);
 		setAudioEnergy(0);
 		setIsPlaying(false);
 	}, [disposeSignalChain, isPreparingVoices]);
@@ -703,6 +740,7 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		stopVoicePreview();
 		partRef.current?.stop();
 		setPlaybackSeconds(0);
+		setPlaybackEventIndex(null);
 		setAudioEnergy(0);
 		setIsPlaying(false);
 
@@ -799,6 +837,27 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		);
 	}, []);
 
+	const getPlaybackPosition = useCallback(
+		() => partRef.current?.getPosition() ?? 0,
+		[],
+	);
+
+	const getVisualizationAudioFrame = useCallback(() => {
+		const waveform = waveformAnalyserRef.current?.getValue();
+		const spectrum = spectrumAnalyserRef.current?.getValue();
+
+		return {
+			waveform:
+				waveform instanceof Float32Array
+					? waveform
+					: new Float32Array(),
+			spectrum:
+				spectrum instanceof Float32Array
+					? spectrum
+					: new Float32Array(),
+		};
+	}, []);
+
 	useEffect(() => {
 		partRef.current?.setLoop(isLoopEnabled);
 	}, [isLoopEnabled]);
@@ -893,6 +952,9 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		pause,
 		stop,
 		playbackSeconds,
+		playbackEventIndex,
+		getPlaybackPosition,
+		getVisualizationAudioFrame,
 		audioEnergy,
 		playbackTriggerCount,
 		audioContextState,

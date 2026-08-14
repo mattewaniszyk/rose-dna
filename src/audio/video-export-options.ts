@@ -1,3 +1,5 @@
+import type { GenomicMusicSequence } from "./types";
+
 export const VIDEO_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:5"] as const;
 
 export type VideoAspectRatio = (typeof VIDEO_ASPECT_RATIOS)[number];
@@ -32,6 +34,8 @@ export type VideoCaptureRequest = {
 	width: number;
 	height: number;
 	maxPixelRatio: number;
+	sequence: GenomicMusicSequence;
+	audioBuffer: AudioBuffer;
 };
 
 export type VideoCaptureSession = {
@@ -41,7 +45,7 @@ export type VideoCaptureSession = {
 };
 
 export function getCapturePixelRatio(
-	request: VideoCaptureRequest,
+	request: Pick<VideoCaptureRequest, "width" | "height" | "maxPixelRatio">,
 	sourceWidth: number,
 	sourceHeight: number,
 ) {

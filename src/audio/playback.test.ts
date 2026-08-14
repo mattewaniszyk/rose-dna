@@ -23,6 +23,8 @@ function makeSequence(): GenomicMusicSequence {
 				voice: "A",
 				qualityScore: 32,
 				direction: "r1",
+				sourceReadIndex: 0,
+				sourceBaseIndex: 0,
 			},
 			{
 				time: 1,
@@ -33,6 +35,8 @@ function makeSequence(): GenomicMusicSequence {
 				voice: "G",
 				qualityScore: 24,
 				direction: "r2",
+				sourceReadIndex: 1,
+				sourceBaseIndex: 0,
 			},
 		],
 		runtimeSeconds: 2,
@@ -87,10 +91,12 @@ describe("buildTonePart", () => {
 		vi.advanceTimersByTime(1);
 
 		expect(onTrigger).toHaveBeenCalledTimes(1);
+		expect(onTrigger).toHaveBeenLastCalledWith(makeSequence().events[0], 0);
 		expect(triggerAttackRelease).toHaveBeenLastCalledWith(600, 0.2, 12, 0.8);
 
 		vi.advanceTimersByTime(999);
 		expect(onTrigger).toHaveBeenCalledTimes(2);
+		expect(onTrigger).toHaveBeenLastCalledWith(makeSequence().events[1], 1);
 
 		vi.advanceTimersByTime(1000);
 		expect(onEnded).toHaveBeenCalledOnce();
@@ -113,6 +119,22 @@ describe("buildTonePart", () => {
 		expect(Object.values(voices).every((voice) => voice.volume.value === -8)).toBe(true);
 		vi.advanceTimersByTime(500);
 		expect(triggerAttackRelease).toHaveBeenCalledTimes(2);
+	});
+
+	it("wraps loop playback to the first event index", () => {
+		const { voices } = makeVoiceBank();
+		const onTrigger = vi.fn();
+		const playback = buildTonePart(makeSequence(), voices, onTrigger);
+
+		playback.setLoop(true);
+		playback.play();
+		vi.advanceTimersByTime(2_001);
+
+		expect(onTrigger.mock.calls.map(([, eventIndex]) => eventIndex)).toEqual([
+			0,
+			1,
+			0,
+		]);
 	});
 
 	it("immediately silences active voices when stopped", () => {

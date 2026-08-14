@@ -399,6 +399,8 @@ export async function exportSequenceToMp4(
 				width: output.width,
 				height: output.height,
 				maxPixelRatio: quality.maxPixelRatio,
+				sequence,
+				audioBuffer,
 			},
 			options.signal,
 		);

@@ -305,6 +305,10 @@ function getStatusLabel(audio: GenomicAudioController) {
 		return `Playing · ${audio.audioContextState} · ${audio.playbackTriggerCount}`;
 	}
 
+	if (audio.buildError || audio.exportError) {
+		return "Error";
+	}
+
 	if (audio.exportStatus === "done") {
 		return `${audio.exportKind?.toUpperCase() ?? "Export"} ready`;
 	}
@@ -314,7 +318,7 @@ function getStatusLabel(audio: GenomicAudioController) {
 	}
 
 	if (audio.buildStatus === "loading") {
-		return "Loading FASTQ";
+		return "Loading & mapping";
 	}
 
 	if (audio.buildStatus === "error" || audio.exportStatus === "error") {
@@ -713,7 +717,7 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 							{isLoading ? (
 								<>
 									<Loader2Icon className="size-3.5 animate-spin" />
-									Parsing FASTQ...
+									Loading & mapping...
 								</>
 							) : (
 								"Load and Map"

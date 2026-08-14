@@ -93,6 +93,8 @@ const sequence: GenomicMusicSequence = {
 			voice: "A",
 			qualityScore: 30,
 			direction: "r1",
+			sourceReadIndex: 0,
+			sourceBaseIndex: 0,
 		},
 	],
 	runtimeSeconds: 30,

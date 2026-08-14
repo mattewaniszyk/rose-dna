@@ -1,4 +1,34 @@
-# React + TypeScript + Vite
+# Rose DNA
+
+Rose DNA turns paired FASTQ reads into a timed musical sequence and an
+interactive Three.js rose. Its Visual Layers control can independently show a
+full-scene Stepwise base/complement background and a lower-third Strudel
+visualization. MP4 exports reproduce whichever visual layers were enabled when
+the export began.
+
+## Development
+
+Node 20.19 or newer is required.
+
+```sh
+npm install
+npm test
+npm run lint
+npm run build
+```
+
+## License and source availability
+
+Rose DNA is free software licensed under
+[AGPL-3.0-or-later](./LICENSE). The complete corresponding source is this
+repository, including the browser-side visualization and export integration.
+If you deploy a modified version over a network, provide its users access to
+the corresponding modified source as required by the license.
+
+Third-party components retain their own licenses; see
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+
+## Original Vite notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 

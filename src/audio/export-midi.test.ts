@@ -20,6 +20,8 @@ const sequence: GenomicMusicSequence = {
 		voice: base,
 		qualityScore: 20 + index,
 		direction: index % 2 ? "r2" : "r1",
+		sourceReadIndex: index,
+		sourceBaseIndex: index,
 	})),
 	runtimeSeconds: 60,
 	noteCount: 4,

@@ -57,6 +57,7 @@ type NoteCandidate = {
 	baseIndex: number;
 	direction: FastqRead["direction"];
 	qualityScore: number;
+	sourceReadIndex: number;
 	sourceOrder: number;
 };
 
@@ -93,16 +94,16 @@ function getMeterGroupEndings(
 }
 
 function interleaveReads(readsA: FastqRead[], readsB: FastqRead[]) {
-	const merged: FastqRead[] = [];
+	const merged: Array<{ read: FastqRead; sourceReadIndex: number }> = [];
 	const length = Math.max(readsA.length, readsB.length);
 
 	for (let index = 0; index < length; index += 1) {
 		if (readsA[index]) {
-			merged.push(readsA[index]);
+			merged.push({ read: readsA[index], sourceReadIndex: index });
 		}
 
 		if (readsB[index]) {
-			merged.push(readsB[index]);
+			merged.push({ read: readsB[index], sourceReadIndex: index });
 		}
 	}
 
@@ -274,7 +275,7 @@ export function mapDatasetToSequence(
 	const candidates: NoteCandidate[] = [];
 
 	for (let readIndex = 0; readIndex < mergedReads.length; readIndex += 1) {
-		const read = mergedReads[readIndex];
+		const { read, sourceReadIndex } = mergedReads[readIndex];
 		const upperSequence = read.sequence.toUpperCase();
 		const baseLimit = Math.min(upperSequence.length, maxBasesPerRead);
 
@@ -293,6 +294,7 @@ export function mapDatasetToSequence(
 				baseIndex: index,
 				qualityScore,
 				direction: read.direction,
+				sourceReadIndex,
 				sourceOrder: readIndex,
 			});
 		}
@@ -376,6 +378,8 @@ export function mapDatasetToSequence(
 				voice: candidate.base,
 				qualityScore: candidate.qualityScore,
 				direction: candidate.direction,
+				sourceReadIndex: candidate.sourceReadIndex,
+				sourceBaseIndex: candidate.baseIndex,
 			};
 		},
 	);

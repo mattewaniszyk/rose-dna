@@ -1,5 +1,5 @@
 import * as Tone from "tone";
-import type { GenomicMusicSequence } from "./types";
+import type { GenomicMusicSequence, GenomicNoteEvent } from "./types";
 import {
 	createElectronicVoice,
 	type GenomicVoiceBank,
@@ -19,7 +19,7 @@ export type ScheduledGenomicPlayback = {
 export function buildTonePart(
 	sequence: GenomicMusicSequence,
 	voices: GenomicVoiceBank,
-	onTrigger?: () => void,
+	onTrigger?: (event: GenomicNoteEvent, eventIndex: number) => void,
 	onEnded?: () => void,
 ): ScheduledGenomicPlayback {
 	let timerIds: number[] = [];
@@ -86,14 +86,15 @@ export function buildTonePart(
 		isRunning = true;
 		startedAtMs = performance.now();
 
-		for (const event of sequence.events) {
+		for (let eventIndex = 0; eventIndex < sequence.events.length; eventIndex += 1) {
+			const event = sequence.events[eventIndex];
 			if (event.time < positionSeconds) {
 				continue;
 			}
 
 			const delayMs = Math.max(0, (event.time - positionSeconds) * 1000);
 			const timerId = window.setTimeout(() => {
-				onTrigger?.();
+				onTrigger?.(event, eventIndex);
 				voices[event.voice].triggerAttackRelease(
 					Tone.Frequency(event.midi, "midi").toFrequency(),
 					event.duration,

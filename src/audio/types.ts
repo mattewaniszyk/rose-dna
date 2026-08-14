@@ -189,6 +189,8 @@ export type GenomicNoteEvent = {
 	voice: CanonicalBase;
 	qualityScore: number;
 	direction: ReadDirection;
+	sourceReadIndex: number;
+	sourceBaseIndex: number;
 };
 
 export type GenomicMusicSequence = {

@@ -64,6 +64,17 @@ describe("mapDatasetToSequence", () => {
 			true,
 		);
 		expect(first.events.at(-1)?.time).toBeLessThan(30);
+		expect(first.events[0]).toMatchObject({
+			sourceReadIndex: 0,
+			sourceBaseIndex: 0,
+		});
+		expect(
+			first.events.every(
+				(event) =>
+					Number.isInteger(event.sourceReadIndex) &&
+					Number.isInteger(event.sourceBaseIndex),
+			),
+		).toBe(true);
 	});
 
 	it("clamps runtime to the supported 30–180 second range", () => {

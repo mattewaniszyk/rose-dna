@@ -40,7 +40,15 @@ import {
 	type RoseMaterialPreset,
 } from "./rose-material";
 import { SceneBackdrop } from "./SceneBackdrop";
+import { SceneVisualization } from "./SceneVisualization";
 import { Skybox } from "./Skybox";
+import { StepwiseBackdrop } from "./StepwiseBackdrop";
+import type { GenomicMusicSequence } from "@/audio/types";
+import type {
+	BottomVisualizationMode,
+	VisualLayoutPreset,
+	VisualizationAudioFrame,
+} from "@/visualization/types";
 
 type SceneEnvironmentProps = {
 	roseMaterialPreset: RoseMaterialPreset;
@@ -311,12 +319,14 @@ export type RoseSceneCaptureController = {
 type SceneCaptureControllerProps = {
 	active: boolean;
 	audioEnergyRef: RefObject<number>;
+	elapsedSecondsRef: RefObject<number>;
 	onChange?: (controller: RoseSceneCaptureController | null) => void;
 };
 
 function SceneCaptureController({
 	active,
 	audioEnergyRef,
+	elapsedSecondsRef,
 	onChange,
 }: SceneCaptureControllerProps) {
 	const { advance, gl, setFrameloop } = useThree();
@@ -333,10 +343,12 @@ function SceneCaptureController({
 			canvas: gl.domElement,
 			renderFrame: (elapsedSeconds, audioEnergy) => {
 				audioEnergyRef.current = audioEnergy;
+				elapsedSecondsRef.current = elapsedSeconds;
 				advance(elapsedSeconds, true);
 			},
 			resetTimeline: () => {
 				audioEnergyRef.current = 0;
+				elapsedSecondsRef.current = 0;
 				// Calling this again intentionally resets the manual clock to zero
 				// after the scene/backdrop warm-up frames.
 				setFrameloop("never");
@@ -347,10 +359,19 @@ function SceneCaptureController({
 
 		return () => {
 			audioEnergyRef.current = 0;
+			elapsedSecondsRef.current = 0;
 			onChange?.(null);
 			setFrameloop("always");
 		};
-	}, [active, advance, audioEnergyRef, gl, onChange, setFrameloop]);
+	}, [
+		active,
+		advance,
+		audioEnergyRef,
+		elapsedSecondsRef,
+		gl,
+		onChange,
+		setFrameloop,
+	]);
 
 	return null;
 }
@@ -361,6 +382,8 @@ type RoseSceneProps = {
 	roseAnglePreset: RoseAnglePreset;
 	roseMaterialPreset: RoseMaterialPreset;
 	audioEnergy?: number;
+	bottomVisualizationEnabled: boolean;
+	bottomVisualizationMode: BottomVisualizationMode;
 	videoCaptureActive?: boolean;
 	videoCapturePixelRatio?: number;
 	onSceneCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
@@ -368,6 +391,13 @@ type RoseSceneProps = {
 		controller: RoseSceneCaptureController | null,
 	) => void;
 	onBackdropReadyChange?: (ready: boolean) => void;
+	getPlaybackPosition: () => number;
+	getVisualizationAudioFrame: () => VisualizationAudioFrame;
+	isPlaying: boolean;
+	sequence: GenomicMusicSequence | null;
+	stepwiseBackgroundEnabled: boolean;
+	stepwiseLayoutPreset: VisualLayoutPreset;
+	visualizationLayoutPreset: VisualLayoutPreset;
 };
 
 export function RoseScene({
@@ -376,13 +406,24 @@ export function RoseScene({
 	roseAnglePreset,
 	roseMaterialPreset,
 	audioEnergy = 0,
+	bottomVisualizationEnabled,
+	bottomVisualizationMode,
 	videoCaptureActive = false,
 	videoCapturePixelRatio = 1,
 	onSceneCanvasChange,
 	onSceneCaptureControllerChange,
 	onBackdropReadyChange,
+	getPlaybackPosition,
+	getVisualizationAudioFrame,
+	isPlaying,
+	sequence,
+	stepwiseBackgroundEnabled,
+	stepwiseLayoutPreset,
+	visualizationLayoutPreset,
 }: RoseSceneProps) {
 	const captureAudioEnergyRef = useRef(0);
+	const captureElapsedSecondsRef = useRef(0);
+	const stepwiseActive = stepwiseBackgroundEnabled && Boolean(sequence);
 	const handleCaptureControllerChange = useCallback(
 		(controller: RoseSceneCaptureController | null) => {
 			onSceneCaptureControllerChange?.(controller);
@@ -463,15 +504,38 @@ export function RoseScene({
 				<SceneCaptureController
 					active={videoCaptureActive}
 					audioEnergyRef={captureAudioEnergyRef}
+					elapsedSecondsRef={captureElapsedSecondsRef}
 					onChange={handleCaptureControllerChange}
 				/>
 				<fog attach="fog" args={[fogColor, 12, 20]} />
 				<SceneEnvironment roseMaterialPreset={roseMaterialPreset} />
 				{/* Glass uses canvas alpha to reveal the DOM backdrop, so skip the
 				    opaque black skybox that would block that see-through. */}
-				{isGlass ? null : <Skybox backgroundMode={backgroundMode} />}
+				{isGlass ? null : (
+					<Skybox backgroundMode={backgroundMode} />
+				)}
 				{needsBackdrop ? (
 					<SceneBackdrop onReadyChange={onBackdropReadyChange} />
+				) : null}
+				{stepwiseActive && sequence ? (
+					<StepwiseBackdrop
+						captureActive={videoCaptureActive}
+						captureTimeRef={captureElapsedSecondsRef}
+						getPlaybackPosition={getPlaybackPosition}
+						layoutPreset={stepwiseLayoutPreset}
+						sequence={sequence}
+					/>
+				) : null}
+				{bottomVisualizationEnabled && sequence && !videoCaptureActive ? (
+					<SceneVisualization
+						key={`${bottomVisualizationMode}:${visualizationLayoutPreset}`}
+						getAudioFrame={getVisualizationAudioFrame}
+						getPlaybackPosition={getPlaybackPosition}
+						isPlaying={isPlaying}
+						layoutPreset={visualizationLayoutPreset}
+						mode={bottomVisualizationMode}
+						sequence={sequence}
+					/>
 				) : null}
 				{hasActiveOverlay ? (
 					<OverlayEffects

@@ -1,5 +1,17 @@
 # Third-Party Notices
 
+## Strudel
+
+The Stepwise and lower-third sequence visualizations integrate the pinned
+`@strudel/core` and `@strudel/draw` packages at version 1.2.6. Strudel and these
+packages are licensed under AGPL-3.0-or-later. Tone and the FluidR3-derived
+sample set remain the authoritative audio engine; Strudel is used for pattern
+and drawing primitives.
+
+- https://github.com/tidalcycles/strudel
+- https://strudel.cc/technical-manual/project-start/
+- https://www.gnu.org/licenses/agpl-3.0.html
+
 ## ffmpeg.wasm core
 
 This application distributes `@ffmpeg/core` to perform MP3 encoding in the

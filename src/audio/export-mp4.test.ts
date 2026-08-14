@@ -160,6 +160,8 @@ const sequence: GenomicMusicSequence = {
 			voice: "A",
 			qualityScore: 30,
 			direction: "r1",
+			sourceReadIndex: 0,
+			sourceBaseIndex: 0,
 		},
 	],
 	runtimeSeconds: 0.03,
@@ -392,7 +394,13 @@ describe("MP4 export", () => {
 		expect(command[command.indexOf("-crf") + 1]).toBe("1");
 		expect(mockState.recorderOptions[0]?.videoBitsPerSecond).toBe(80_000_000);
 		expect(prepareScene).toHaveBeenCalledWith(
-			{ width: 1080, height: 1920, maxPixelRatio: 2 },
+			expect.objectContaining({
+				width: 1080,
+				height: 1920,
+				maxPixelRatio: 2,
+				sequence,
+				audioBuffer: expect.anything(),
+			}),
 			undefined,
 		);
 	});
