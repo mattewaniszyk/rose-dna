@@ -16,9 +16,9 @@ export function OverlayEffects({ overlayEffect }: OverlayEffectsProps) {
 	const scene = useThree((state) => state.scene);
 	const camera = useThree((state) => state.camera);
 	const size = useThree((state) => state.size);
+	const pixelRatio = useThree((state) => state.viewport.dpr);
 
 	const composition = useMemo(() => {
-		const pixelRatio = gl.getPixelRatio();
 		const drawingBuffer = gl.getDrawingBufferSize(new Vector2());
 		const bundle = createOverlayPasses(overlayEffect, {
 			width: drawingBuffer.x / pixelRatio,
@@ -50,15 +50,13 @@ export function OverlayEffects({ overlayEffect }: OverlayEffectsProps) {
 		}
 
 		return { bundle, composer, outputPass, renderPass };
-	}, [camera, gl, overlayEffect, scene]);
+	}, [camera, gl, overlayEffect, pixelRatio, scene]);
 
 	useEffect(() => {
-		const pixelRatio = gl.getPixelRatio();
-
 		composition.composer.setPixelRatio(pixelRatio);
 		composition.composer.setSize(size.width, size.height);
 		composition.bundle?.setSize(size.width, size.height, pixelRatio);
-	}, [composition, gl, size]);
+	}, [composition, pixelRatio, size]);
 
 	useEffect(() => {
 		return () => {

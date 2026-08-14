@@ -44,6 +44,7 @@ import { SceneVisualization } from "./SceneVisualization";
 import { Skybox } from "./Skybox";
 import { StepwiseBackdrop } from "./StepwiseBackdrop";
 import type { GenomicMusicSequence } from "@/audio/types";
+import { audioBufferFrameAt } from "@/visualization/audio-analysis";
 import type {
 	BottomVisualizationMode,
 	VisualLayoutPreset,
@@ -344,6 +345,13 @@ function SceneCaptureController({
 			renderFrame: (elapsedSeconds, audioEnergy) => {
 				audioEnergyRef.current = audioEnergy;
 				elapsedSecondsRef.current = elapsedSeconds;
+				// Every requested export frame must be self-contained. In particular,
+				// do not let a composer or transparent texture preserve pixels from
+				// the preceding live/capture frame.
+				gl.setRenderTarget(null);
+				gl.clear(true, true, true);
+				// R3F's `frameloop="never"` path subtracts this value directly
+				// from clock.elapsedTime, so it must remain in seconds.
 				advance(elapsedSeconds, true);
 			},
 			resetTimeline: () => {
@@ -385,7 +393,7 @@ type RoseSceneProps = {
 	bottomVisualizationEnabled: boolean;
 	bottomVisualizationMode: BottomVisualizationMode;
 	videoCaptureActive?: boolean;
-	videoCapturePixelRatio?: number;
+	videoCaptureAudioBuffer?: AudioBuffer | null;
 	onSceneCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
 	onSceneCaptureControllerChange?: (
 		controller: RoseSceneCaptureController | null,
@@ -409,7 +417,7 @@ export function RoseScene({
 	bottomVisualizationEnabled,
 	bottomVisualizationMode,
 	videoCaptureActive = false,
-	videoCapturePixelRatio = 1,
+	videoCaptureAudioBuffer = null,
 	onSceneCanvasChange,
 	onSceneCaptureControllerChange,
 	onBackdropReadyChange,
@@ -424,6 +432,32 @@ export function RoseScene({
 	const captureAudioEnergyRef = useRef(0);
 	const captureElapsedSecondsRef = useRef(0);
 	const stepwiseActive = stepwiseBackgroundEnabled && Boolean(sequence);
+	const visualizationRenderKey = [
+		videoCaptureActive ? "capture" : "live",
+		bottomVisualizationMode,
+		visualizationLayoutPreset,
+	].join(":");
+	const getActiveVisualizationPosition = useCallback(
+		() =>
+			videoCaptureActive
+				? captureElapsedSecondsRef.current
+				: getPlaybackPosition(),
+		[getPlaybackPosition, videoCaptureActive],
+	);
+	const getActiveVisualizationAudioFrame = useCallback(
+		() =>
+			videoCaptureActive && videoCaptureAudioBuffer
+				? audioBufferFrameAt(
+						videoCaptureAudioBuffer,
+						captureElapsedSecondsRef.current,
+					)
+				: getVisualizationAudioFrame(),
+		[
+			getVisualizationAudioFrame,
+			videoCaptureActive,
+			videoCaptureAudioBuffer,
+		],
+	);
 	const handleCaptureControllerChange = useCallback(
 		(controller: RoseSceneCaptureController | null) => {
 			onSceneCaptureControllerChange?.(controller);
@@ -489,9 +523,12 @@ export function RoseScene({
 
 	return (
 		<div className="scene" aria-hidden="true">
+			{/* Keep the drawing buffer stable when capture starts. FFmpeg performs
+			    the requested scale/crop after recording, so changing DPR here only
+			    invalidates the live canvas textures mid-scene. */}
 			<Canvas
 				camera={{ position: [0.2, 0.55, 8.9], fov: 34 }}
-				dpr={videoCaptureActive ? videoCapturePixelRatio : [1, 2]}
+				dpr={[1, 2]}
 				frameloop={videoCaptureActive ? "never" : "always"}
 				gl={{ alpha: true }}
 				onCreated={({ camera, gl }) => {
@@ -519,6 +556,7 @@ export function RoseScene({
 				) : null}
 				{stepwiseActive && sequence ? (
 					<StepwiseBackdrop
+						key={`${videoCaptureActive ? "capture" : "live"}:${stepwiseLayoutPreset}`}
 						captureActive={videoCaptureActive}
 						captureTimeRef={captureElapsedSecondsRef}
 						getPlaybackPosition={getPlaybackPosition}
@@ -526,12 +564,14 @@ export function RoseScene({
 						sequence={sequence}
 					/>
 				) : null}
-				{bottomVisualizationEnabled && sequence && !videoCaptureActive ? (
+				{bottomVisualizationEnabled &&
+				sequence &&
+				(!videoCaptureActive || videoCaptureAudioBuffer) ? (
 					<SceneVisualization
-						key={`${bottomVisualizationMode}:${visualizationLayoutPreset}`}
-						getAudioFrame={getVisualizationAudioFrame}
-						getPlaybackPosition={getPlaybackPosition}
-						isPlaying={isPlaying}
+						key={visualizationRenderKey}
+						getAudioFrame={getActiveVisualizationAudioFrame}
+						getPlaybackPosition={getActiveVisualizationPosition}
+						isPlaying={videoCaptureActive || isPlaying}
 						layoutPreset={visualizationLayoutPreset}
 						mode={bottomVisualizationMode}
 						sequence={sequence}

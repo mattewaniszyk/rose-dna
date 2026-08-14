@@ -50,6 +50,7 @@ export function SceneVisualization({
 	const meshRef = useRef<Mesh>(null);
 	const lastAudioFrameRef = useRef<VisualizationAudioFrame>(EMPTY_AUDIO_FRAME);
 	const lastModeRef = useRef<BottomVisualizationMode>(mode);
+	const lastPlaybackPositionRef = useRef(0);
 	const liveStateRef = useRef({
 		getAudioFrame,
 		getPlaybackPosition,
@@ -117,6 +118,9 @@ export function SceneVisualization({
 		}
 
 		const playbackPosition = liveState.getPlaybackPosition();
+		const timelineReset =
+			playbackPosition + 1 / 120 < lastPlaybackPositionRef.current;
+		lastPlaybackPositionRef.current = playbackPosition;
 		if (liveState.isPlaying) {
 			lastAudioFrameRef.current = liveState.getAudioFrame();
 		} else if (playbackPosition <= 0) {
@@ -130,7 +134,7 @@ export function SceneVisualization({
 			playbackPosition,
 			lastAudioFrameRef.current,
 			{
-				reset: resized || modeChanged,
+				reset: resized || modeChanged || timelineReset,
 				vertical: layout.visualizationVertical,
 			},
 		);

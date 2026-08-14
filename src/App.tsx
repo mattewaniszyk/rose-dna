@@ -17,55 +17,14 @@ import {
 import { UnicornBackground } from "./components/UnicornBackground";
 import { useGenomicAudio } from "./hooks/useGenomicAudio";
 import {
-	getCapturePixelRatio,
 	type VideoCaptureRequest,
 	type VideoCaptureSession,
 } from "./audio/video-export-options";
-import { audioBufferFrameAt } from "./visualization/audio-analysis";
-import { getVisualCompositionLayout } from "./visualization/canvas-layout";
-import {
-	createVisualizationModel,
-	drawBottomVisualization,
-} from "./visualization/renderers";
 import {
 	DEFAULT_VISUAL_LAYER_SETTINGS,
 	type BottomVisualizationMode,
 	type VisualLayoutPreset,
 } from "./visualization/types";
-
-function drawCanvasCover(
-	context: CanvasRenderingContext2D,
-	source: HTMLCanvasElement,
-	width: number,
-	height: number,
-) {
-	const sourceAspect = source.width / Math.max(1, source.height);
-	const targetAspect = width / Math.max(1, height);
-	let sourceX = 0;
-	let sourceY = 0;
-	let sourceWidth = source.width;
-	let sourceHeight = source.height;
-
-	if (sourceAspect > targetAspect) {
-		sourceWidth = source.height * targetAspect;
-		sourceX = (source.width - sourceWidth) / 2;
-	} else {
-		sourceHeight = source.width / targetAspect;
-		sourceY = (source.height - sourceHeight) / 2;
-	}
-
-	context.drawImage(
-		source,
-		sourceX,
-		sourceY,
-		sourceWidth,
-		sourceHeight,
-		0,
-		0,
-		width,
-		height,
-	);
-}
 
 function waitForSceneCapture(
 	getController: () => RoseSceneCaptureController | null,
@@ -167,7 +126,8 @@ function App() {
 	const backdropReadyRef = useRef(false);
 	const requiresBackdropRef = useRef(Boolean(unicornProjectId));
 	const [isVideoCaptureActive, setIsVideoCaptureActive] = useState(false);
-	const [videoCapturePixelRatio, setVideoCapturePixelRatio] = useState(1);
+	const [videoCaptureAudioBuffer, setVideoCaptureAudioBuffer] =
+		useState<AudioBuffer | null>(null);
 	requiresBackdropRef.current = Boolean(unicornProjectId);
 	const handleBackdropReadyChange = useCallback((ready: boolean) => {
 		backdropReadyRef.current = ready;
@@ -180,16 +140,14 @@ function App() {
 	);
 	const releaseVideoScene = useCallback(() => {
 		setIsVideoCaptureActive(false);
-		setVideoCapturePixelRatio(1);
+		setVideoCaptureAudioBuffer(null);
 	}, []);
 
 	const prepareVideoScene = useCallback(async (
 		request: VideoCaptureRequest,
 		signal?: AbortSignal,
 	): Promise<VideoCaptureSession> => {
-		setVideoCapturePixelRatio(
-			getCapturePixelRatio(request, window.innerWidth, window.innerHeight),
-		);
+		setVideoCaptureAudioBuffer(request.audioBuffer);
 		setIsVideoCaptureActive(true);
 
 		try {
@@ -200,72 +158,9 @@ function App() {
 				signal,
 			);
 
-			if (!bottomVisualizationEnabled) {
-				return {
-					canvas: controller.canvas,
-					renderFrame: controller.renderFrame,
-					release: releaseVideoScene,
-				};
-			}
-
-			const compositeCanvas = document.createElement("canvas");
-			compositeCanvas.width = request.width;
-			compositeCanvas.height = request.height;
-			const compositeContext = compositeCanvas.getContext("2d", {
-				alpha: false,
-			});
-			const bottomCanvas = document.createElement("canvas");
-			const compositionLayout = getVisualCompositionLayout(
-				stepwiseBackgroundEnabled ? visualLayoutPreset : "balanced",
-				request.width / Math.max(1, request.height),
-			);
-			const visualizationRect = compositionLayout.visualization;
-			bottomCanvas.width = Math.max(
-				1,
-				Math.round(request.width * visualizationRect.width),
-			);
-			bottomCanvas.height = Math.max(
-				1,
-				Math.round(request.height * visualizationRect.height),
-			);
-			const bottomContext = bottomCanvas.getContext("2d");
-
-			if (!compositeContext || !bottomContext) {
-				throw new Error("The video visualization canvas could not be created.");
-			}
-
-			const visualizationModel = createVisualizationModel(request.sequence);
-			let firstVisualizationFrame = true;
-
 			return {
-				canvas: compositeCanvas,
-				renderFrame: (elapsedSeconds, audioEnergy) => {
-					controller.renderFrame(elapsedSeconds, audioEnergy);
-					compositeContext.clearRect(0, 0, request.width, request.height);
-					drawCanvasCover(
-						compositeContext,
-						controller.canvas,
-						request.width,
-						request.height,
-					);
-					drawBottomVisualization(
-						bottomContext,
-						bottomVisualizationMode,
-						visualizationModel,
-						elapsedSeconds,
-						audioBufferFrameAt(request.audioBuffer, elapsedSeconds),
-						{
-							reset: firstVisualizationFrame,
-							vertical: compositionLayout.visualizationVertical,
-						},
-					);
-					firstVisualizationFrame = false;
-					compositeContext.drawImage(
-						bottomCanvas,
-						Math.round(request.width * visualizationRect.x),
-						Math.round(request.height * visualizationRect.y),
-					);
-				},
+				canvas: controller.canvas,
+				renderFrame: controller.renderFrame,
 				release: releaseVideoScene,
 			};
 		} catch (error) {
@@ -273,11 +168,7 @@ function App() {
 			throw error;
 		}
 	}, [
-		bottomVisualizationEnabled,
-		bottomVisualizationMode,
 		releaseVideoScene,
-		stepwiseBackgroundEnabled,
-		visualLayoutPreset,
 	]);
 	const videoExportBridge = useMemo(
 		() => ({
@@ -313,7 +204,7 @@ function App() {
 				roseMaterialPreset={roseMaterialPreset}
 				audioEnergy={genomicAudio.audioEnergy}
 				videoCaptureActive={isVideoCaptureActive}
-				videoCapturePixelRatio={videoCapturePixelRatio}
+				videoCaptureAudioBuffer={videoCaptureAudioBuffer}
 				onSceneCaptureControllerChange={
 					handleSceneCaptureControllerChange
 				}

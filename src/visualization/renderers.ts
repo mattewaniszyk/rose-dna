@@ -477,24 +477,21 @@ function drawStepwiseCodeBlock(
 	const codeLeft = x + gutterWidth + fontSize * 0.65;
 	const codeRight = x + width - fontSize * 0.4;
 	const visibleLineCount = Math.max(3, Math.floor(height / lineHeight));
-	const entryLineCount = Math.max(1, visibleLineCount - 2);
+	const entryLineCount = Math.max(1, visibleLineCount - 3);
 	let lineNumber = 1;
 	let cursorX = codeLeft;
 	let cursorY = y + lineHeight;
 
 	context.font = `500 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
 	context.textBaseline = "alphabetic";
-	const representativeEntryWidth = context.measureText(`[00.00, "A"],  `).width;
+	const representativeEntryWidth = context.measureText(`[1, "A"],  `).width;
 	const entriesPerLine = Math.max(
 		1,
 		Math.floor(
 			(codeRight - codeLeft) / Math.max(1, representativeEntryWidth),
 		),
 	);
-	const entryCapacity = Math.min(
-		compact ? 180 : 240,
-		entryLineCount * entriesPerLine,
-	);
+	const entryCapacity = entryLineCount * entriesPerLine;
 
 	const drawLineNumber = () => {
 		context.fillStyle = "rgba(255,255,255,0.23)";
