@@ -75,7 +75,12 @@ export function VisualLayersMenu({
 					</Button>
 				</PopoverTrigger>
 
-				<PopoverContent align="end" sideOffset={10} className="visual-layers-panel">
+				<PopoverContent
+					align="end"
+					collisionPadding={12}
+					sideOffset={10}
+					className="visual-layers-panel"
+				>
 					<header>
 						<p className="audio-panel-eyebrow">Visual Layers</p>
 						<h2 className="audio-panel-title">Sequence and sound feedback</h2>

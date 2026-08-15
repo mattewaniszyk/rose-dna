@@ -88,8 +88,9 @@ export function BackgroundMenu({
 				</DropdownMenuTrigger>
 				<DropdownMenuContent
 					align="end"
+					collisionPadding={12}
 					sideOffset={10}
-					className="w-72 min-w-72 rounded-3xl border border-white/10 bg-black/80 p-2 text-white shadow-[0_22px_65px_rgba(0,0,0,0.48)] backdrop-blur-xl"
+					className="scene-menu-panel rounded-3xl border border-white/10 bg-black/80 p-2 text-white shadow-[0_22px_65px_rgba(0,0,0,0.48)] backdrop-blur-xl"
 				>
 					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
 						Scene Background

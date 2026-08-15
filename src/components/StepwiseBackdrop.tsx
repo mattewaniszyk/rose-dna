@@ -6,6 +6,7 @@ import {
 	SRGBColorSpace,
 	Vector3,
 	type Mesh,
+	type MeshBasicMaterial,
 	type PerspectiveCamera,
 } from "three";
 import type { GenomicMusicSequence } from "@/audio/types";
@@ -28,6 +29,17 @@ type StepwiseBackdropProps = {
 	sequence: GenomicMusicSequence;
 };
 
+function createCanvasTextureResource(width = 1, height = 1) {
+	const canvas = document.createElement("canvas");
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext("2d");
+	const texture = new CanvasTexture(canvas);
+	texture.colorSpace = SRGBColorSpace;
+
+	return { canvas, context, texture };
+}
+
 export function StepwiseBackdrop({
 	captureActive,
 	captureTimeRef,
@@ -44,28 +56,21 @@ export function StepwiseBackdrop({
 		() => createStepwiseVisualizationModel(sequence),
 		[sequence],
 	);
-	const resource = useMemo(() => {
-		const canvas = document.createElement("canvas");
-		const context = canvas.getContext("2d");
-		const texture = new CanvasTexture(canvas);
-		texture.colorSpace = SRGBColorSpace;
-
-		return { canvas, context, texture };
-	}, []);
+	const initialResource = useMemo(() => createCanvasTextureResource(), []);
+	const resourceRef = useRef(initialResource);
 	layoutPresetRef.current = layoutPreset;
 
 	useEffect(() => {
 		return () => {
-			resource.texture.dispose();
+			resourceRef.current.texture.dispose();
 		};
-	}, [resource]);
+	}, []);
 
 	useEffect(() => {
 		renderKeyRef.current = "";
 	}, [model]);
 
 	useFrame(({ camera, size }) => {
-		const { canvas, context, texture } = resource;
 		const mesh = meshRef.current;
 		const perspectiveCamera = camera as PerspectiveCamera;
 		const distance = 18;
@@ -76,12 +81,24 @@ export function StepwiseBackdrop({
 			gl.getPixelRatio(),
 		);
 
-		if (canvas.width !== width || canvas.height !== height) {
-			canvas.width = width;
-			canvas.height = height;
+		if (!mesh) {
+			return;
 		}
 
-		if (!context || !mesh) {
+		let resource = resourceRef.current;
+		if (resource.canvas.width !== width || resource.canvas.height !== height) {
+			const nextResource = createCanvasTextureResource(width, height);
+			const material = mesh.material as MeshBasicMaterial;
+			material.map = nextResource.texture;
+			material.needsUpdate = true;
+			resource.texture.dispose();
+			resourceRef.current = nextResource;
+			resource = nextResource;
+			renderKeyRef.current = "";
+		}
+
+		const { context, texture } = resource;
+		if (!context) {
 			return;
 		}
 
@@ -127,7 +144,7 @@ export function StepwiseBackdrop({
 		<mesh ref={meshRef} renderOrder={-1000} frustumCulled={false}>
 			<planeGeometry args={[1, 1]} />
 			<meshBasicMaterial
-				map={resource.texture}
+				map={initialResource.texture}
 				transparent
 				depthTest
 				depthWrite={false}

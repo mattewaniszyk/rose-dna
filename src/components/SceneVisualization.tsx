@@ -6,6 +6,7 @@ import {
 	SRGBColorSpace,
 	Vector3,
 	type Mesh,
+	type MeshBasicMaterial,
 	type PerspectiveCamera,
 } from "three";
 import type { GenomicMusicSequence } from "@/audio/types";
@@ -38,6 +39,17 @@ const EMPTY_AUDIO_FRAME: VisualizationAudioFrame = {
 	spectrum: new Float32Array(),
 };
 
+function createCanvasTextureResource(width = 1, height = 1) {
+	const canvas = document.createElement("canvas");
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext("2d");
+	const texture = new CanvasTexture(canvas);
+	texture.colorSpace = SRGBColorSpace;
+
+	return { canvas, context, texture };
+}
+
 export function SceneVisualization({
 	getAudioFrame,
 	getPlaybackPosition,
@@ -62,14 +74,8 @@ export function SceneVisualization({
 	const right = useMemo(() => new Vector3(), []);
 	const up = useMemo(() => new Vector3(), []);
 	const model = useMemo(() => createVisualizationModel(sequence), [sequence]);
-	const resource = useMemo(() => {
-		const canvas = document.createElement("canvas");
-		const context = canvas.getContext("2d");
-		const texture = new CanvasTexture(canvas);
-		texture.colorSpace = SRGBColorSpace;
-
-		return { canvas, context, texture };
-	}, []);
+	const initialResource = useMemo(() => createCanvasTextureResource(), []);
+	const resourceRef = useRef(initialResource);
 	liveStateRef.current = {
 		getAudioFrame,
 		getPlaybackPosition,
@@ -79,14 +85,13 @@ export function SceneVisualization({
 	};
 
 	useEffect(() => {
-		return () => resource.texture.dispose();
-	}, [resource]);
+		return () => resourceRef.current.texture.dispose();
+	}, []);
 
 	useFrame(({ camera, size }) => {
 		const mesh = meshRef.current;
-		const { canvas, context, texture } = resource;
 
-		if (!mesh || !context) {
+		if (!mesh) {
 			return;
 		}
 
@@ -105,12 +110,24 @@ export function SceneVisualization({
 			size.height * rect.height,
 			gl.getPixelRatio(),
 		);
-		const resized = canvas.width !== width || canvas.height !== height;
+		let resource = resourceRef.current;
+		const resized =
+			resource.canvas.width !== width || resource.canvas.height !== height;
 		const modeChanged = lastModeRef.current !== liveState.mode;
 
 		if (resized) {
-			canvas.width = width;
-			canvas.height = height;
+			const nextResource = createCanvasTextureResource(width, height);
+			const material = mesh.material as MeshBasicMaterial;
+			material.map = nextResource.texture;
+			material.needsUpdate = true;
+			resource.texture.dispose();
+			resourceRef.current = nextResource;
+			resource = nextResource;
+		}
+
+		const { canvas, context, texture } = resource;
+		if (!context) {
+			return;
 		}
 		if (modeChanged) {
 			context.clearRect(0, 0, canvas.width, canvas.height);
@@ -168,7 +185,7 @@ export function SceneVisualization({
 		<mesh ref={meshRef} renderOrder={-500} frustumCulled={false}>
 			<planeGeometry args={[1, 1]} />
 			<meshBasicMaterial
-				map={resource.texture}
+				map={initialResource.texture}
 				transparent
 				depthTest
 				depthWrite={false}
