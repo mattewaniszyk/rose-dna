@@ -44,6 +44,7 @@ import { SceneVisualization } from "./SceneVisualization";
 import { Skybox } from "./Skybox";
 import { StepwiseBackdrop } from "./StepwiseBackdrop";
 import type { GenomicMusicSequence } from "@/audio/types";
+import type { VideoCaptureViewport } from "@/audio/video-export-options";
 import { audioBufferFrameAt } from "@/visualization/audio-analysis";
 import type {
 	BottomVisualizationMode,
@@ -394,6 +395,7 @@ type RoseSceneProps = {
 	bottomVisualizationMode: BottomVisualizationMode;
 	videoCaptureActive?: boolean;
 	videoCaptureAudioBuffer?: AudioBuffer | null;
+	videoCaptureViewport?: VideoCaptureViewport | null;
 	onSceneCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
 	onSceneCaptureControllerChange?: (
 		controller: RoseSceneCaptureController | null,
@@ -418,6 +420,7 @@ export function RoseScene({
 	bottomVisualizationMode,
 	videoCaptureActive = false,
 	videoCaptureAudioBuffer = null,
+	videoCaptureViewport = null,
 	onSceneCanvasChange,
 	onSceneCaptureControllerChange,
 	onBackdropReadyChange,
@@ -522,10 +525,24 @@ export function RoseScene({
 				: 5;
 
 	return (
-		<div className="scene" aria-hidden="true">
-			{/* Keep the drawing buffer stable when capture starts. FFmpeg performs
-			    the requested scale/crop after recording, so changing DPR here only
-			    invalidates the live canvas textures mid-scene. */}
+		<div
+			className="scene"
+			aria-hidden="true"
+			style={
+				videoCaptureActive && videoCaptureViewport
+					? {
+							inset: "auto",
+							left: "50%",
+							top: "50%",
+							width: videoCaptureViewport.width,
+							height: videoCaptureViewport.height,
+							transform: "translate(-50%, -50%)",
+						}
+					: undefined
+			}
+		>
+			{/* The capture wrapper adopts the requested output aspect before manual
+			    rendering starts, keeping edge-anchored labels inside the video. */}
 			<Canvas
 				camera={{ position: [0.2, 0.55, 8.9], fov: 34 }}
 				dpr={[1, 2]}

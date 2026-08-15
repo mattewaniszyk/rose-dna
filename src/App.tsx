@@ -18,8 +18,10 @@ import {
 import { UnicornBackground } from "./components/UnicornBackground";
 import { useGenomicAudio } from "./hooks/useGenomicAudio";
 import {
+	getContainedVideoCaptureViewport,
 	type VideoCaptureRequest,
 	type VideoCaptureSession,
+	type VideoCaptureViewport,
 } from "./audio/video-export-options";
 import {
 	type BottomVisualizationMode,
@@ -31,33 +33,18 @@ import {
 	type SharedAppSettings,
 } from "./shared-settings";
 
-function drawCanvasCover(
+function drawCanvasFrame(
 	context: CanvasRenderingContext2D,
 	source: HTMLCanvasElement,
 	width: number,
 	height: number,
 ) {
-	const sourceAspect = source.width / Math.max(1, source.height);
-	const targetAspect = width / Math.max(1, height);
-	let sourceX = 0;
-	let sourceY = 0;
-	let sourceWidth = source.width;
-	let sourceHeight = source.height;
-
-	if (sourceAspect > targetAspect) {
-		sourceWidth = source.height * targetAspect;
-		sourceX = (source.width - sourceWidth) / 2;
-	} else {
-		sourceHeight = source.width / targetAspect;
-		sourceY = (source.height - sourceHeight) / 2;
-	}
-
 	context.drawImage(
 		source,
-		sourceX,
-		sourceY,
-		sourceWidth,
-		sourceHeight,
+		0,
+		0,
+		source.width,
+		source.height,
 		0,
 		0,
 		width,
@@ -68,6 +55,7 @@ function drawCanvasCover(
 function waitForSceneCapture(
 	getController: () => RoseSceneCaptureController | null,
 	isBackdropReady: () => boolean,
+	targetAspect: number,
 	signal?: AbortSignal,
 ) {
 	return new Promise<RoseSceneCaptureController>((resolve, reject) => {
@@ -92,6 +80,9 @@ function waitForSceneCapture(
 
 		const poll = (timestamp: number) => {
 			const controller = getController();
+			const canvasAspect = controller
+				? controller.canvas.width / Math.max(1, controller.canvas.height)
+				: 0;
 
 			if (controller) {
 				controller.renderFrame(warmupFrameCount / 30, 0);
@@ -102,6 +93,7 @@ function waitForSceneCapture(
 				controller &&
 				controller.canvas.width > 0 &&
 				controller.canvas.height > 0 &&
+				Math.abs(canvasAspect - targetAspect) < 0.002 &&
 				isBackdropReady()
 			) {
 				readyFrameCount += 1;
@@ -175,6 +167,8 @@ function App() {
 	const [isVideoCaptureActive, setIsVideoCaptureActive] = useState(false);
 	const [videoCaptureAudioBuffer, setVideoCaptureAudioBuffer] =
 		useState<AudioBuffer | null>(null);
+	const [videoCaptureViewport, setVideoCaptureViewport] =
+		useState<VideoCaptureViewport | null>(null);
 	requiresBackdropRef.current = Boolean(unicornProjectId);
 	const handleBackdropReadyChange = useCallback((ready: boolean) => {
 		backdropReadyRef.current = ready;
@@ -188,6 +182,7 @@ function App() {
 	const releaseVideoScene = useCallback(() => {
 		setIsVideoCaptureActive(false);
 		setVideoCaptureAudioBuffer(null);
+		setVideoCaptureViewport(null);
 	}, []);
 
 	const prepareVideoScene = useCallback(async (
@@ -195,6 +190,14 @@ function App() {
 		signal?: AbortSignal,
 	): Promise<VideoCaptureSession> => {
 		setVideoCaptureAudioBuffer(request.audioBuffer);
+		setVideoCaptureViewport(
+			getContainedVideoCaptureViewport(
+				request.width,
+				request.height,
+				window.innerWidth,
+				window.innerHeight,
+			),
+		);
 		setIsVideoCaptureActive(true);
 
 		try {
@@ -202,6 +205,7 @@ function App() {
 				() => sceneCaptureControllerRef.current,
 				() =>
 					!requiresBackdropRef.current || backdropReadyRef.current,
+				request.width / request.height,
 				signal,
 			);
 			const captureCanvas = document.createElement("canvas");
@@ -223,7 +227,7 @@ function App() {
 				renderFrame: (elapsedSeconds, audioEnergy) => {
 					controller.renderFrame(elapsedSeconds, audioEnergy);
 					captureContext.clearRect(0, 0, request.width, request.height);
-					drawCanvasCover(
+					drawCanvasFrame(
 						captureContext,
 						controller.canvas,
 						request.width,
@@ -322,6 +326,7 @@ function App() {
 				audioEnergy={genomicAudio.audioEnergy}
 				videoCaptureActive={isVideoCaptureActive}
 				videoCaptureAudioBuffer={videoCaptureAudioBuffer}
+				videoCaptureViewport={videoCaptureViewport}
 				onSceneCaptureControllerChange={
 					handleSceneCaptureControllerChange
 				}

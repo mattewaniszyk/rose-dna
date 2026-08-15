@@ -182,6 +182,7 @@ import {
 import { resetMediaEncoder } from "./export-media";
 import {
 	getCapturePixelRatio,
+	getContainedVideoCaptureViewport,
 	type VideoCaptureSession,
 } from "./video-export-options";
 
@@ -268,6 +269,21 @@ describe("MP4 export", () => {
 				900,
 			),
 		).toBe(1);
+	});
+
+	it("fits the capture scene to the requested aspect without cropping its edges", () => {
+		expect(
+			getContainedVideoCaptureViewport(1920, 1080, 1600, 1200),
+		).toEqual({
+			width: 1600,
+			height: 900,
+		});
+		expect(
+			getContainedVideoCaptureViewport(1080, 1920, 1600, 1200),
+		).toEqual({
+			width: 675,
+			height: 1200,
+		});
 	});
 
 	it("seeds frame zero before creating the manual capture stream", async () => {

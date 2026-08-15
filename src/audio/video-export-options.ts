@@ -44,6 +44,30 @@ export type VideoCaptureSession = {
 	release: () => void;
 };
 
+export type VideoCaptureViewport = {
+	width: number;
+	height: number;
+};
+
+export function getContainedVideoCaptureViewport(
+	targetWidth: number,
+	targetHeight: number,
+	viewportWidth: number,
+	viewportHeight: number,
+): VideoCaptureViewport {
+	const safeTargetWidth = Math.max(1, targetWidth);
+	const safeTargetHeight = Math.max(1, targetHeight);
+	const scale = Math.min(
+		Math.max(1, viewportWidth) / safeTargetWidth,
+		Math.max(1, viewportHeight) / safeTargetHeight,
+	);
+
+	return {
+		width: safeTargetWidth * scale,
+		height: safeTargetHeight * scale,
+	};
+}
+
 export function getCapturePixelRatio(
 	request: Pick<VideoCaptureRequest, "width" | "height" | "maxPixelRatio">,
 	sourceWidth: number,
