@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { AudioPanel } from "./components/AudioPanel";
 import { BackgroundMenu } from "./components/BackgroundMenu";
+import { ShareSettingsButton } from "./components/ShareSettingsButton";
 import { VisualLayersMenu } from "./components/VisualLayersMenu";
 import {
 	BACKGROUND_MODE_PROJECT_IDS,
@@ -21,10 +22,14 @@ import {
 	type VideoCaptureSession,
 } from "./audio/video-export-options";
 import {
-	DEFAULT_VISUAL_LAYER_SETTINGS,
 	type BottomVisualizationMode,
 	type VisualLayoutPreset,
 } from "./visualization/types";
+import {
+	buildSharedSettingsUrl,
+	parseSharedSettings,
+	type SharedAppSettings,
+} from "./shared-settings";
 
 function waitForSceneCapture(
 	getController: () => RoseSceneCaptureController | null,
@@ -101,24 +106,32 @@ function waitForSceneCapture(
 }
 
 function App() {
+	const initialSharedSettings = useMemo(
+		() => parseSharedSettings(window.location.search),
+		[],
+	);
 	const [backgroundMode, setBackgroundMode] =
-		useState<BackgroundMode>("black");
+		useState<BackgroundMode>(initialSharedSettings.settings.backgroundMode);
 	const [roseAnglePreset, setRoseAnglePreset] =
-		useState<RoseAnglePreset>("default");
+		useState<RoseAnglePreset>(initialSharedSettings.settings.roseAnglePreset);
 	const [roseMaterialPreset, setRoseMaterialPreset] =
-		useState<RoseMaterialPreset>("default");
-	const [overlayEffect, setOverlayEffect] = useState<OverlayEffect>("none");
+		useState<RoseMaterialPreset>(
+			initialSharedSettings.settings.roseMaterialPreset,
+		);
+	const [overlayEffect, setOverlayEffect] = useState<OverlayEffect>(
+		initialSharedSettings.settings.overlayEffect,
+	);
 	const [stepwiseBackgroundEnabled, setStepwiseBackgroundEnabled] =
-		useState(DEFAULT_VISUAL_LAYER_SETTINGS.stepwiseBackgroundEnabled);
+		useState(initialSharedSettings.settings.stepwiseBackgroundEnabled);
 	const [bottomVisualizationEnabled, setBottomVisualizationEnabled] =
-		useState(DEFAULT_VISUAL_LAYER_SETTINGS.bottomVisualizationEnabled);
+		useState(initialSharedSettings.settings.bottomVisualizationEnabled);
 	const [bottomVisualizationMode, setBottomVisualizationMode] =
 		useState<BottomVisualizationMode>(
-			DEFAULT_VISUAL_LAYER_SETTINGS.bottomVisualizationMode,
+			initialSharedSettings.settings.bottomVisualizationMode,
 		);
 	const [visualLayoutPreset, setVisualLayoutPreset] =
 		useState<VisualLayoutPreset>(
-			DEFAULT_VISUAL_LAYER_SETTINGS.visualLayoutPreset,
+			initialSharedSettings.settings.visualLayoutPreset,
 		);
 	const unicornProjectId = BACKGROUND_MODE_PROJECT_IDS[backgroundMode];
 	const sceneCaptureControllerRef =
@@ -176,7 +189,55 @@ function App() {
 		}),
 		[prepareVideoScene],
 	);
-	const genomicAudio = useGenomicAudio(videoExportBridge);
+	const genomicAudio = useGenomicAudio(videoExportBridge, {
+		initialSettings: initialSharedSettings.settings.audio,
+		autoLoadInitialFixture: initialSharedSettings.shouldAutoLoad,
+	});
+	const sharedSettings = useMemo<SharedAppSettings>(
+		() => ({
+			backgroundMode,
+			roseAnglePreset,
+			roseMaterialPreset,
+			overlayEffect,
+			stepwiseBackgroundEnabled,
+			bottomVisualizationEnabled,
+			bottomVisualizationMode,
+			visualLayoutPreset,
+			audio: {
+				selectedFixtureId: genomicAudio.selectedFixtureId,
+				parseOptions: genomicAudio.parseOptions,
+				mappingOptions: genomicAudio.mappingOptions,
+				isLoopEnabled: genomicAudio.isLoopEnabled,
+				videoAspectRatio: genomicAudio.videoAspectRatio,
+				videoQuality: genomicAudio.videoQuality,
+			},
+		}),
+		[
+			backgroundMode,
+			bottomVisualizationEnabled,
+			bottomVisualizationMode,
+			genomicAudio.isLoopEnabled,
+			genomicAudio.mappingOptions,
+			genomicAudio.parseOptions,
+			genomicAudio.selectedFixtureId,
+			genomicAudio.videoAspectRatio,
+			genomicAudio.videoQuality,
+			overlayEffect,
+			roseAnglePreset,
+			roseMaterialPreset,
+			stepwiseBackgroundEnabled,
+			visualLayoutPreset,
+		],
+	);
+	const shareUrl = useMemo(
+		() => buildSharedSettingsUrl(window.location.href, sharedSettings).href,
+		[sharedSettings],
+	);
+	useEffect(() => {
+		if (window.location.href !== shareUrl) {
+			window.history.replaceState(window.history.state, "", shareUrl);
+		}
+	}, [shareUrl]);
 	const isExporting = genomicAudio.exportStatus === "exporting";
 	const activeStepwiseLayoutPreset: VisualLayoutPreset =
 		stepwiseBackgroundEnabled && bottomVisualizationEnabled
@@ -243,6 +304,7 @@ function App() {
 						visualLayoutPreset={visualLayoutPreset}
 					/>
 					<AudioPanel audio={genomicAudio} />
+					<ShareSettingsButton url={shareUrl} />
 				</div>
 			</div>
 		</main>

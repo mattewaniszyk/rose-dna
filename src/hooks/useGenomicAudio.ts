@@ -48,6 +48,7 @@ import {
 	type VideoCaptureSession,
 	type VideoQualityPreset,
 } from "@/audio/video-export-options";
+import type { GenomicAudioSettings } from "@/shared-settings";
 
 type BuildStatus = "idle" | "loading" | "ready" | "error";
 type ExportStatus = "idle" | "exporting" | "done" | "error";
@@ -57,6 +58,11 @@ type VideoExportBridge = {
 		request: VideoCaptureRequest,
 		signal?: AbortSignal,
 	) => Promise<VideoCaptureSession>;
+};
+
+type UseGenomicAudioOptions = {
+	autoLoadInitialFixture?: boolean;
+	initialSettings?: GenomicAudioSettings;
 };
 
 function clampInt(value: number, min: number, max: number) {
@@ -79,21 +85,40 @@ function stringifyUnknownError(error: unknown) {
 	return JSON.stringify(error);
 }
 
-export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
+export function useGenomicAudio(
+	videoExportBridge?: VideoExportBridge,
+	options: UseGenomicAudioOptions = {},
+) {
 	const fixtures = useMemo(() => FASTQ_FIXTURES, []);
 	const [selectedFixtureId, setSelectedFixtureId] = useState(
-		fixtures[0]?.id ?? "",
+		options.initialSettings?.selectedFixtureId ?? fixtures[0]?.id ?? "",
 	);
 	const [parseOptions, setParseOptions] =
-		useState<FastqParseOptions>(DEFAULT_PARSE_OPTIONS);
+		useState<FastqParseOptions>(() => ({
+			...(options.initialSettings?.parseOptions ?? DEFAULT_PARSE_OPTIONS),
+		}));
 	const [mappingOptions, setMappingOptions] =
-		useState<MappingOptions>(DEFAULT_MAPPING_OPTIONS);
+		useState<MappingOptions>(() => {
+			const initialMappingOptions =
+				options.initialSettings?.mappingOptions ?? DEFAULT_MAPPING_OPTIONS;
+			return {
+				...initialMappingOptions,
+				voiceSettings: {
+					A: { ...initialMappingOptions.voiceSettings.A },
+					C: { ...initialMappingOptions.voiceSettings.C },
+					G: { ...initialMappingOptions.voiceSettings.G },
+					T: { ...initialMappingOptions.voiceSettings.T },
+				},
+			};
+		});
 	const [buildStatus, setBuildStatus] = useState<BuildStatus>("idle");
 	const [buildError, setBuildError] = useState<string | null>(null);
 	const [dataset, setDataset] = useState<FastqDataset | null>(null);
 	const [sequence, setSequence] =
 		useState<GenomicMusicSequence | null>(null);
-	const [isLoopEnabled, setIsLoopEnabled] = useState(true);
+	const [isLoopEnabled, setIsLoopEnabled] = useState(
+		options.initialSettings?.isLoopEnabled ?? true,
+	);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [playbackSeconds, setPlaybackSeconds] = useState(0);
 	const [playbackEventIndex, setPlaybackEventIndex] = useState<number | null>(null);
@@ -107,14 +132,17 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 	const [exportProgress, setExportProgress] = useState(0);
 	const [isVideoExportSupported, setIsVideoExportSupported] = useState(false);
 	const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>(
-		DEFAULT_VIDEO_ASPECT_RATIO,
+		options.initialSettings?.videoAspectRatio ?? DEFAULT_VIDEO_ASPECT_RATIO,
 	);
 	const [videoQuality, setVideoQuality] = useState<VideoQualityPreset>(
-		DEFAULT_VIDEO_QUALITY_PRESET,
+		options.initialSettings?.videoQuality ?? DEFAULT_VIDEO_QUALITY_PRESET,
 	);
 	const [previewingBase, setPreviewingBase] =
 		useState<CanonicalBase | null>(null);
 	const [isPreparingVoices, setIsPreparingVoices] = useState(false);
+	const shouldAutoLoadInitialFixtureRef = useRef(
+		options.autoLoadInitialFixture ?? false,
+	);
 
 	const voicesRef = useRef<GenomicVoiceBank | null>(null);
 	const voiceBankPromiseRef = useRef<Promise<GenomicVoiceBank> | null>(null);
@@ -600,6 +628,15 @@ export function useGenomicAudio(videoExportBridge?: VideoExportBridge) {
 		selectedFixtureId,
 		sourceConfigurationKey,
 	]);
+
+	useEffect(() => {
+		if (!shouldAutoLoadInitialFixtureRef.current) {
+			return;
+		}
+
+		shouldAutoLoadInitialFixtureRef.current = false;
+		void loadSelectedFixture();
+	}, [loadSelectedFixture]);
 
 	const play = useCallback(async () => {
 		if (!sequence || sequence.events.length === 0) {
