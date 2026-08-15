@@ -6,6 +6,29 @@ full-scene Stepwise base/complement background and a lower-third Strudel
 visualization. MP4 exports reproduce whichever visual layers were enabled when
 the export began.
 
+## FASTQ fixtures
+
+The fixture menu includes the three paired examples from the Rieseberg Lab
+`fastq-examples` repository and a 2,000-pair subset of the public
+[`Rosa gallica` run ERR14041549](https://www.ebi.ac.uk/ena/browser/view/ERR14041549).
+The ERR14041549 subset is stored in `public/data` as separate, gzip-compressed
+R1 and R2 files so the browser does not have to download and buffer the linked
+3.7 GB interleaved FASTQ.
+
+To recreate a compact pair from an interleaved FASTQ whose consecutive records
+are R1 then R2:
+
+```sh
+npm run sample:interleaved-fastq -- \
+  ERR14041549.fastq 2000 \
+  public/data/ERR14041549_R1.sample.fastq.gz \
+  public/data/ERR14041549_R2.sample.fastq.gz
+```
+
+This step both selects the requested number of complete pairs and compresses
+the outputs. Compression alone would reduce transfer size, but would not make
+the full run appropriate for the app's current whole-file browser parser.
+
 ## Development
 
 Node 20.19 or newer is required.

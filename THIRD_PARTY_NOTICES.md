@@ -1,5 +1,17 @@
 # Third-Party Notices
 
+## FASTQ example data
+
+The application loads paired FASTQ examples from the Rieseberg Lab
+`fastq-examples` repository. It also distributes a 2,000-pair, gzip-compressed
+subset of the public *Rosa gallica* whole-genome sequencing run ERR14041549
+(study PRJEB82787), derived from the interleaved FASTQ supplied for this
+project. Data provenance and any applicable reuse terms remain those of the
+source records.
+
+- https://github.com/rieseberglab/fastq-examples
+- https://www.ebi.ac.uk/ena/browser/view/ERR14041549
+
 ## Strudel
 
 The Stepwise and lower-third sequence visualizations integrate the pinned

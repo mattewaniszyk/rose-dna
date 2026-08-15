@@ -9,6 +9,7 @@
 	},
 	"scripts": {
 		"prepare:ffmpeg-core": "node scripts/prepare-ffmpeg-core.mjs",
+		"sample:interleaved-fastq": "node scripts/sample-interleaved-fastq.mjs",
 		"dev": "npm run prepare:ffmpeg-core && vite",
 		"build": "npm run prepare:ffmpeg-core && tsc -b && vite build",
 		"lint": "oxlint . --ignore-pattern public/ffmpeg/**",

@@ -10,6 +10,10 @@ import type {
 
 const textDecoder = new TextDecoder();
 
+function isGzipPayload(payload: Uint8Array) {
+	return payload[0] === 0x1f && payload[1] === 0x8b;
+}
+
 function clampCount(value: number, fallback: number) {
 	if (!Number.isFinite(value)) {
 		return fallback;
@@ -26,9 +30,24 @@ async function fetchTextPayload(url: string) {
 	}
 
 	const payload = new Uint8Array(await response.arrayBuffer());
-	const decompressed = url.endsWith(".gz") ? gunzipSync(payload) : payload;
+	let decompressed = payload;
 
-	return textDecoder.decode(decompressed);
+	if (isGzipPayload(payload)) {
+		try {
+			decompressed = gunzipSync(payload);
+		} catch {
+			throw new Error(`Failed to decompress FASTQ asset: ${url}`);
+		}
+	}
+
+	const text = textDecoder.decode(decompressed);
+	if (!text.trimStart().startsWith("@")) {
+		throw new Error(
+			`FASTQ asset did not contain gzip data or FASTQ text: ${url}`,
+		);
+	}
+
+	return text;
 }
 
 export function parseFastqText(

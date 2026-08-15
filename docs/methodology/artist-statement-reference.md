@@ -8,7 +8,7 @@ The work is conceived as a **living data portrait**. The rose gives abstract seq
 
 ## Method
 
-The current inputs are three public paired-end FASTQ examples—ANN0830, ANN0831, and ANN0832—from the [Rieseberg Lab `fastq-examples` repository](https://github.com/rieseberglab/fastq-examples). The program samples selected reads rather than processing the files exhaustively.
+The current inputs are three public paired-end FASTQ examples—ANN0830, ANN0831, and ANN0832—from the [Rieseberg Lab `fastq-examples` repository](https://github.com/rieseberglab/fastq-examples), plus a 2,000-pair subset of [ERR14041549](https://www.ebi.ac.uk/ena/browser/view/ERR14041549), a public paired-end *Rosa gallica* whole-genome sequencing run. The program samples selected reads rather than processing the files exhaustively.
 
 Each canonical base—A, C, G, or T—becomes a note in its own configurable instrumental voice. The two paired read streams occupy different pitch ranges, base position affects octave, and an assumed Phred+33 quality score contributes to loudness. Tempo, meter, accents, phrase endings, duration, and instrumentation are artist-defined parts of the translation.
 
@@ -20,7 +20,7 @@ Audio energy subtly changes the rose's rotation, floating motion, and wobble. Th
 
 The work should not be described as a genome reconstruction, biological analysis, diagnostic instrument, gene-expression model, or neutral scientific visualization.
 
-> **Before publication:** Add the verified organism/species, specimen or tissue, study accession, collection context, data creator, license, access date, and any relevant consent or ethics information. Until verified, describe the inputs only as public paired-end FASTQ examples using their ANN identifiers.
+> **Before publication:** Add the verified organism/species, specimen or tissue, study accession, collection context, data creator, license, access date, and any relevant consent or ethics information for the ANN fixtures; confirm any additional attribution requirements for ERR14041549.
 
 Creator and license details for the sourced rose model and Unicorn Studio backgrounds also require completion. Software and audio-sample acknowledgements appear in [Third-Party Notices](../../THIRD_PARTY_NOTICES.md).
 
