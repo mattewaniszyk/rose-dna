@@ -270,6 +270,32 @@ describe("MP4 export", () => {
 		).toBe(1);
 	});
 
+	it("seeds frame zero before creating the manual capture stream", async () => {
+		const callOrder: string[] = [];
+		const renderFrame = vi.fn(() => callOrder.push("render"));
+		const canvas = new MockCanvas();
+		const captureStream = canvas.captureStream.bind(canvas);
+		canvas.captureStream = (frameRate: number) => {
+			callOrder.push("capture-stream");
+			return captureStream(frameRate);
+		};
+		const promise = recordCanvas(
+			createCaptureSession({
+				canvas: canvas as unknown as HTMLCanvasElement,
+				renderFrame,
+			}),
+			{
+				durationSeconds: 0.03,
+				energyEnvelope: new Float32Array([0.25]),
+			},
+		);
+
+		expect(callOrder.slice(0, 2)).toEqual(["render", "capture-stream"]);
+		expect(renderFrame).toHaveBeenCalledWith(0, expect.closeTo(0.25));
+		await vi.advanceTimersByTimeAsync(34);
+		await expect(promise).resolves.toBeInstanceOf(Blob);
+	});
+
 	it("renders and requests every deterministic frame before stopping", async () => {
 		const renderFrame = vi.fn();
 		const promise = recordCanvas(createCaptureSession({ renderFrame }), {

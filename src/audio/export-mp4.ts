@@ -143,6 +143,13 @@ export async function recordCanvas(
 	}
 
 	throwIfAborted(options.signal, "MP4 export was cancelled.");
+	// A newly-created intermediary capture canvas has no frame for the stream
+	// track yet. Seed frame zero before captureStream()/MediaRecorder startup so
+	// browsers do not wait for a frame while our render loop waits for `start`.
+	session.renderFrame(
+		0,
+		getEnvelopeEnergy(options.energyEnvelope, 0),
+	);
 
 	return await new Promise<Blob>((resolve, reject) => {
 		// A zero frame-rate stream only captures when requestFrame is called. This
@@ -262,10 +269,12 @@ export async function recordCanvas(
 					throwIfAborted(options.signal, "MP4 export was cancelled.");
 
 					const elapsedSeconds = frame / VIDEO_FRAME_RATE;
-					session.renderFrame(
-						elapsedSeconds,
-						getEnvelopeEnergy(options.energyEnvelope, elapsedSeconds),
-					);
+					if (frame > 0) {
+						session.renderFrame(
+							elapsedSeconds,
+							getEnvelopeEnergy(options.energyEnvelope, elapsedSeconds),
+						);
+					}
 					videoTrack.requestFrame?.();
 
 					const completedFrames = frame + 1;
