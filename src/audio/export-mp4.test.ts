@@ -291,18 +291,32 @@ describe("MP4 export", () => {
 		expect(mockState.trackStop).toHaveBeenCalledOnce();
 	});
 
-	it("keeps frame timestamps deterministic when rendering falls behind", async () => {
-		let wallTime = 0;
-		const nowSpy = vi
-			.spyOn(performance, "now")
-			.mockImplementation(() => wallTime);
-		const renderFrame = vi.fn((_elapsedSeconds: number, _energy: number) => {
-			wallTime += 75;
+	it("retains all 1,800 frames for a one-minute export", async () => {
+		const renderFrame = vi.fn();
+		const promise = recordCanvas(createCaptureSession({ renderFrame }), {
+			durationSeconds: 60,
+			energyEnvelope: new Float32Array([0]),
 		});
+
+		await vi.advanceTimersByTimeAsync(60_100);
+		await expect(promise).resolves.toBeInstanceOf(Blob);
+		expect(renderFrame).toHaveBeenCalledTimes(1_800);
+		expect(mockState.trackRequestFrame).toHaveBeenCalledTimes(1_800);
+		expect(renderFrame).toHaveBeenNthCalledWith(1_800, 1_799 / 30, 0);
+	});
+
+	it("keeps deterministic frames separated when rendering falls behind", async () => {
+		const renderFrame = vi.fn();
 		const promise = recordCanvas(createCaptureSession({ renderFrame }), {
 			durationSeconds: 0.1,
 			energyEnvelope: new Float32Array([0.2, 0.4, 0.6]),
 		});
+
+		expect(renderFrame).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(32);
+		expect(renderFrame).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(2);
+		expect(renderFrame).toHaveBeenCalledTimes(2);
 
 		await vi.runAllTimersAsync();
 		await expect(promise).resolves.toBeInstanceOf(Blob);
@@ -313,8 +327,6 @@ describe("MP4 export", () => {
 			2 / 30,
 		]);
 		expect(mockState.trackRequestFrame).toHaveBeenCalledTimes(3);
-		expect(wallTime).toBeGreaterThan(100);
-		nowSpy.mockRestore();
 	});
 
 	it("stops the recorder and capture track when cancelled", async () => {
@@ -369,7 +381,12 @@ describe("MP4 export", () => {
 		expect(command.join(" ")).toContain("crop=1920:1080");
 		expect(command.join(" ")).toContain("setdar=16/9");
 		expect(command.join(" ")).toContain("setpts=N/(30*TB)");
+		expect(command.join(" ")).toContain(
+			"tpad=stop_mode=clone:stop_duration=0.030",
+		);
 		expect(command[command.indexOf("-aspect") + 1]).toBe("16:9");
+		expect(command[command.indexOf("-t") + 1]).toBe("0.030");
+		expect(command).toContain("-shortest");
 	});
 
 	it("uses the selected portrait dimensions and display aspect", async () => {

@@ -230,7 +230,7 @@ export async function recordCanvas(
 			}
 		};
 
-		const waitUntil = (deadline: number) => {
+		const waitForCaptureSlot = (delayMs: number) => {
 			return new Promise<void>((resolveWait) => {
 				const finish = () => {
 					if (finishFrameWait !== finish) {
@@ -242,10 +242,7 @@ export async function recordCanvas(
 				};
 
 				finishFrameWait = finish;
-				frameTimer = window.setTimeout(
-					finish,
-					Math.max(0, deadline - performance.now()),
-				);
+				frameTimer = window.setTimeout(finish, delayMs);
 			});
 		};
 
@@ -255,14 +252,9 @@ export async function recordCanvas(
 				Math.ceil(options.durationSeconds * VIDEO_FRAME_RATE),
 			);
 			const frameDurationMs = 1_000 / VIDEO_FRAME_RATE;
-			const startedAt = performance.now();
 
 			try {
 				for (let frame = 0; frame < frameCount; frame += 1) {
-					if (frame > 0) {
-						await waitUntil(startedAt + frame * frameDurationMs);
-					}
-
 					if (settled) {
 						return;
 					}
@@ -283,11 +275,12 @@ export async function recordCanvas(
 					) {
 						options.onProgress?.(completedFrames / frameCount);
 					}
-				}
 
-				// Hold the final requested frame for one frame interval so the native
-				// recorder has a task boundary in which to enqueue it before stop().
-				await waitUntil(startedAt + frameCount * frameDurationMs);
+					// Manual canvas tracks can coalesce frame requests while the encoder
+					// is busy. Give every requested frame its own full capture slot instead
+					// of issuing zero-delay catch-up requests after a slow render.
+					await waitForCaptureSlot(frameDurationMs);
+				}
 
 				if (settled) {
 					return;
@@ -464,6 +457,9 @@ export async function exportSequenceToMp4(
 				"setsar=1",
 				`setdar=${aspectRatio.replace(":", "/")}`,
 				`fps=${VIDEO_FRAME_RATE}`,
+				// Defensive duration guard: if a browser still drops a requested frame,
+				// keep the video stream alive through the requested audio runtime.
+				`tpad=stop_mode=clone:stop_duration=${duration}`,
 			].join(",");
 			const resultCode = await ffmpeg.exec(
 				[

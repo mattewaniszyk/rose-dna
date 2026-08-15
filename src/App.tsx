@@ -31,6 +31,40 @@ import {
 	type SharedAppSettings,
 } from "./shared-settings";
 
+function drawCanvasCover(
+	context: CanvasRenderingContext2D,
+	source: HTMLCanvasElement,
+	width: number,
+	height: number,
+) {
+	const sourceAspect = source.width / Math.max(1, source.height);
+	const targetAspect = width / Math.max(1, height);
+	let sourceX = 0;
+	let sourceY = 0;
+	let sourceWidth = source.width;
+	let sourceHeight = source.height;
+
+	if (sourceAspect > targetAspect) {
+		sourceWidth = source.height * targetAspect;
+		sourceX = (source.width - sourceWidth) / 2;
+	} else {
+		sourceHeight = source.width / targetAspect;
+		sourceY = (source.height - sourceHeight) / 2;
+	}
+
+	context.drawImage(
+		source,
+		sourceX,
+		sourceY,
+		sourceWidth,
+		sourceHeight,
+		0,
+		0,
+		width,
+		height,
+	);
+}
+
 function waitForSceneCapture(
 	getController: () => RoseSceneCaptureController | null,
 	isBackdropReady: () => boolean,
@@ -170,10 +204,32 @@ function App() {
 					!requiresBackdropRef.current || backdropReadyRef.current,
 				signal,
 			);
+			const captureCanvas = document.createElement("canvas");
+			captureCanvas.width = request.width;
+			captureCanvas.height = request.height;
+			const captureContext = captureCanvas.getContext("2d", {
+				alpha: false,
+			});
+
+			if (!captureContext) {
+				throw new Error("The video capture canvas could not be created.");
+			}
+
+			captureContext.imageSmoothingEnabled = true;
+			captureContext.imageSmoothingQuality = "high";
 
 			return {
-				canvas: controller.canvas,
-				renderFrame: controller.renderFrame,
+				canvas: captureCanvas,
+				renderFrame: (elapsedSeconds, audioEnergy) => {
+					controller.renderFrame(elapsedSeconds, audioEnergy);
+					captureContext.clearRect(0, 0, request.width, request.height);
+					drawCanvasCover(
+						captureContext,
+						controller.canvas,
+						request.width,
+						request.height,
+					);
+				},
 				release: releaseVideoScene,
 			};
 		} catch (error) {
