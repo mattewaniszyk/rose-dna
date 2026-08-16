@@ -354,6 +354,9 @@ function SceneCaptureController({
 				// R3F's `frameloop="never"` path subtracts this value directly
 				// from clock.elapsedTime, so it must remain in seconds.
 				advance(elapsedSeconds, true);
+				// The intermediary recorder canvas reads this WebGL canvas
+				// immediately. Force mobile GPUs to finish the frame before that copy.
+				gl.getContext().finish();
 			},
 			resetTimeline: () => {
 				audioEnergyRef.current = 0;
@@ -547,7 +550,9 @@ export function RoseScene({
 				camera={{ position: [0.2, 0.55, 8.9], fov: 34 }}
 				dpr={[1, 2]}
 				frameloop={videoCaptureActive ? "never" : "always"}
-				gl={{ alpha: true }}
+				// Capture copies this WebGL canvas into a 2D recorder canvas. Mobile
+				// browsers may discard the rendered frame before that copy otherwise.
+				gl={{ alpha: true, preserveDrawingBuffer: true }}
 				onCreated={({ camera, gl }) => {
 					gl.setClearAlpha(0);
 					camera.lookAt(0, 0.58, 0);
