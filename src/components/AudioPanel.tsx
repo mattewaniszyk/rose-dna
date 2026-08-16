@@ -807,7 +807,7 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 								title={
 									audio.isVideoExportSupported
 										? `Record ${videoAspectConfig.width}×${videoAspectConfig.height} ${audio.videoAspectRatio} MP4 at ${videoQualityConfig.label} quality`
-										: "MP4 export requires desktop Chrome or Edge"
+										: "This browser does not support MP4 scene capture"
 								}
 							>
 								{isExporting && audio.exportKind === "mp4" ? (
@@ -829,7 +829,7 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 
 						{!audio.isVideoExportSupported ? (
 							<p className="audio-field-help">
-								MP4 export is available in current desktop Chrome and Edge.
+								MP4 export is not available in this browser.
 							</p>
 						) : null}
 

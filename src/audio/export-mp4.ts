@@ -23,6 +23,8 @@ import {
 const VIDEO_FRAME_RATE = 30;
 const PROGRESS_UPDATE_INTERVAL_FRAMES = 6;
 const VIDEO_MIME_TYPES = [
+	"video/mp4;codecs=avc1.42E01E",
+	"video/mp4",
 	"video/webm;codecs=vp9",
 	"video/webm;codecs=vp8",
 ] as const;
@@ -134,7 +136,7 @@ export async function recordCanvas(
 
 	if (!mimeType || typeof canvas.captureStream !== "function") {
 		throw new Error(
-			"MP4 export requires a current desktop version of Chrome or Edge.",
+			"This browser cannot capture the scene for MP4 export.",
 		);
 	}
 
@@ -152,24 +154,43 @@ export async function recordCanvas(
 	);
 
 	return await new Promise<Blob>((resolve, reject) => {
-		// A zero frame-rate stream only captures when requestFrame is called. This
-		// decouples video time from wall time when rendering takes longer than 1/30s.
-		const stream = canvas.captureStream(0);
+		// Chromium exposes requestFrame(), which lets us capture every rendered
+		// frame deterministically. Mobile WebKit does not, so fall back to a normal
+		// real-time stream there and render the same timeline at the capture rate.
+		let stream: MediaStream;
+		let usesManualCapture = false;
+
+		try {
+			stream = canvas.captureStream(0);
+			const manualTrack = stream.getVideoTracks()[0] as
+				| ManualCanvasCaptureTrack
+				| undefined;
+
+			if (typeof manualTrack?.requestFrame === "function") {
+				usesManualCapture = true;
+			} else {
+				for (const track of stream.getTracks()) {
+					track.stop();
+				}
+				stream = canvas.captureStream(VIDEO_FRAME_RATE);
+			}
+		} catch {
+			stream = canvas.captureStream(VIDEO_FRAME_RATE);
+		}
+
 		const videoTrack = stream.getVideoTracks()[0] as
 			| ManualCanvasCaptureTrack
 			| undefined;
 		const chunks: Blob[] = [];
 		let recorder: MediaRecorder;
 
-		if (!videoTrack || typeof videoTrack.requestFrame !== "function") {
+		if (!videoTrack) {
 			for (const track of stream.getTracks()) {
 				track.stop();
 			}
 
 			reject(
-				new Error(
-					"MP4 export requires manual canvas capture in desktop Chrome or Edge.",
-				),
+				new Error("The browser did not provide a canvas video track."),
 			);
 			return;
 		}
@@ -275,7 +296,9 @@ export async function recordCanvas(
 							getEnvelopeEnergy(options.energyEnvelope, elapsedSeconds),
 						);
 					}
-					videoTrack.requestFrame?.();
+					if (usesManualCapture) {
+						videoTrack.requestFrame?.();
+					}
 
 					const completedFrames = frame + 1;
 					if (
@@ -285,9 +308,9 @@ export async function recordCanvas(
 						options.onProgress?.(completedFrames / frameCount);
 					}
 
-					// Manual canvas tracks can coalesce frame requests while the encoder
-					// is busy. Give every requested frame its own full capture slot instead
-					// of issuing zero-delay catch-up requests after a slow render.
+					// Manual tracks can coalesce requests while the encoder is busy, and
+					// automatic tracks need time to observe each canvas update. Give every
+					// rendered frame its own full capture slot in both modes.
 					await waitForCaptureSlot(frameDurationMs);
 				}
 
@@ -372,7 +395,7 @@ export async function exportSequenceToMp4(
 ) {
 	if (!isMp4ExportSupported()) {
 		throw new Error(
-			"MP4 export requires a current desktop version of Chrome or Edge.",
+			"This browser does not support MP4 scene capture.",
 		);
 	}
 
@@ -428,7 +451,8 @@ export async function exportSequenceToMp4(
 		options.onProgress?.({ stage: "loading-encoder", progress: 1 });
 
 		const id = crypto.randomUUID();
-		const videoName = `video-${id}.webm`;
+		const recordingIsMp4 = recording.type.toLowerCase().startsWith("video/mp4");
+		const videoName = `video-${id}.${recordingIsMp4 ? "mp4" : "webm"}`;
 		const audioName = `audio-${id}.wav`;
 		const mp4Name = `output-${id}.mp4`;
 		const ffmpegLogs: string[] = [];
@@ -470,6 +494,20 @@ export async function exportSequenceToMp4(
 				// keep the video stream alive through the requested audio runtime.
 				`tpad=stop_mode=clone:stop_duration=${duration}`,
 			].join(",");
+			const videoEncodingArgs = recordingIsMp4
+				? ["-c:v", "copy"]
+				: [
+						"-vf",
+						videoFilter,
+						"-c:v",
+						"libx264",
+						"-preset",
+						quality.x264Preset,
+						"-crf",
+						String(quality.crf),
+						"-pix_fmt",
+						"yuv420p",
+					];
 			const resultCode = await ffmpeg.exec(
 				[
 					"-i",
@@ -480,16 +518,7 @@ export async function exportSequenceToMp4(
 					"0:v:0",
 					"-map",
 					"1:a:0",
-					"-vf",
-					videoFilter,
-					"-c:v",
-					"libx264",
-					"-preset",
-					quality.x264Preset,
-					"-crf",
-					String(quality.crf),
-					"-pix_fmt",
-					"yuv420p",
+					...videoEncodingArgs,
 					"-aspect",
 					aspectRatio,
 					"-c:a",

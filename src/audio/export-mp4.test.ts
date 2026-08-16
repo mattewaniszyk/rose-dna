@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
 	captureFrameRates: [] as number[],
 	trackStop: vi.fn(),
 	trackRequestFrame: vi.fn(),
+	supportedMimeTypes: new Set<string>(),
 }));
 
 vi.mock("@ffmpeg/ffmpeg", () => ({
@@ -83,7 +84,7 @@ vi.mock("./sampled-voices", () => ({
 
 class MockMediaRecorder {
 	static isTypeSupported(mimeType: string) {
-		return mimeType === "video/webm;codecs=vp9";
+		return mockState.supportedMimeTypes.has(mimeType);
 	}
 
 	state = "inactive";
@@ -140,6 +141,23 @@ class MockCanvas {
 		const track = {
 			stop: mockState.trackStop,
 			requestFrame: mockState.trackRequestFrame,
+		};
+
+		return {
+			getTracks: () => [track],
+			getVideoTracks: () => [track],
+		};
+	}
+}
+
+class MockAutomaticCanvas {
+	width = 1280;
+	height = 720;
+
+	captureStream(frameRate: number) {
+		mockState.captureFrameRates.push(frameRate);
+		const track = {
+			stop: mockState.trackStop,
 		};
 
 		return {
@@ -221,6 +239,8 @@ describe("MP4 export", () => {
 		mockState.captureFrameRates.length = 0;
 		mockState.trackStop.mockClear();
 		mockState.trackRequestFrame.mockClear();
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/webm;codecs=vp9");
 		resetMediaEncoder();
 	});
 
@@ -331,6 +351,28 @@ describe("MP4 export", () => {
 			[3 / 30, expect.closeTo(0.4)],
 		]);
 		expect(mockState.trackStop).toHaveBeenCalledOnce();
+	});
+
+	it("falls back to real-time canvas capture when requestFrame is unavailable", async () => {
+		const renderFrame = vi.fn();
+		const canvas = new MockAutomaticCanvas();
+		const promise = recordCanvas(
+			createCaptureSession({
+				canvas: canvas as unknown as HTMLCanvasElement,
+				renderFrame,
+			}),
+			{
+				durationSeconds: 0.1,
+				energyEnvelope: new Float32Array([0.2, 0.4, 0.6]),
+			},
+		);
+
+		await vi.advanceTimersByTimeAsync(101);
+		await expect(promise).resolves.toBeInstanceOf(Blob);
+		expect(mockState.captureFrameRates).toEqual([0, 30]);
+		expect(mockState.trackRequestFrame).not.toHaveBeenCalled();
+		expect(renderFrame).toHaveBeenCalledTimes(3);
+		expect(mockState.trackStop).toHaveBeenCalledTimes(2);
 	});
 
 	it("retains all 1,800 frames for a one-minute export", async () => {
@@ -464,6 +506,26 @@ describe("MP4 export", () => {
 		);
 	});
 
+	it("accepts Safari MP4 capture and remuxes its H.264 video without transcoding", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		expect(getSupportedVideoMimeType()).toBe("video/mp4");
+
+		const promise = exportSequenceToMp4(sequence, {
+			prepareScene: vi.fn(async () => createCaptureSession()),
+		});
+
+		await vi.advanceTimersByTimeAsync(40);
+		await promise;
+
+		const command = mockState.commands[0] ?? [];
+		const videoInput = command[command.indexOf("-i") + 1] ?? "";
+		expect(videoInput).toMatch(/^video-.*\.mp4$/u);
+		expect(command[command.indexOf("-c:v") + 1]).toBe("copy");
+		expect(command).not.toContain("libx264");
+		expect(command).not.toContain("-vf");
+	});
+
 	it("rejects unsupported capture and honors pre-recording cancellation", async () => {
 		vi.stubGlobal("MediaRecorder", undefined);
 		expect(isMp4ExportSupported()).toBe(false);
@@ -473,7 +535,7 @@ describe("MP4 export", () => {
 				durationSeconds: 1,
 				energyEnvelope: new Float32Array([0]),
 			}),
-		).rejects.toThrow("Chrome or Edge");
+		).rejects.toThrow("cannot capture");
 
 		vi.stubGlobal("MediaRecorder", MockMediaRecorder);
 		const controller = new AbortController();
