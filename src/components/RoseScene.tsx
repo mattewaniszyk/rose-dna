@@ -3,6 +3,7 @@ import {
 	Suspense,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	type RefObject,
@@ -39,6 +40,10 @@ import {
 	isRoseShaderPreset,
 	type RoseMaterialPreset,
 } from "./rose-material";
+import {
+	sanitizeAnimationDelta,
+	sanitizeAudioEnergy,
+} from "./rose-animation";
 import { SceneBackdrop } from "./SceneBackdrop";
 import { SceneVisualization } from "./SceneVisualization";
 import { Skybox } from "./Skybox";
@@ -266,27 +271,54 @@ function SuspendedRose({
 	const smoothedEnergyRef = useRef(0);
 	const [tiltX, tiltY, tiltZ] = ROSE_ANGLE_PRESET_ROTATIONS[roseAnglePreset];
 
+	useLayoutEffect(() => {
+		const baseY = roseAnglePreset === "top-down" ? -0.2 : -0.58;
+
+		floatPhaseRef.current = null;
+		smoothedEnergyRef.current = 0;
+
+		if (floatRef.current) {
+			floatRef.current.position.y = baseY;
+			floatRef.current.rotation.x = 0;
+			floatRef.current.rotation.z = 0;
+		}
+
+		if (pivotRef.current) {
+			pivotRef.current.rotation.y = 0;
+		}
+	}, [roseAnglePreset, videoCaptureActive]);
+
 	useFrame(({ clock }, delta) => {
-		const elapsed = clock.elapsedTime;
+		const elapsed = Number.isFinite(clock.elapsedTime)
+			? Math.max(0, clock.elapsedTime)
+			: 0;
+		const safeDelta = sanitizeAnimationDelta(delta);
 		const baseY = roseAnglePreset === "top-down" ? -0.2 : -0.58;
 		const currentEnergy = videoCaptureActive
 			? captureAudioEnergyRef.current
 			: audioEnergy;
-		const targetEnergy = Math.min(Math.max(currentEnergy, 0), 1);
-		const smoothing = 1 - Math.exp(-delta * 7);
+		const targetEnergy = sanitizeAudioEnergy(currentEnergy);
+		const smoothing = 1 - Math.exp(-safeDelta * 7);
+
+		if (!Number.isFinite(smoothedEnergyRef.current)) {
+			smoothedEnergyRef.current = 0;
+		}
 
 		smoothedEnergyRef.current +=
 			(targetEnergy - smoothedEnergyRef.current) * smoothing;
 
-		const pulse = smoothedEnergyRef.current;
+		const pulse = sanitizeAudioEnergy(smoothedEnergyRef.current);
 		const orbitSpeed = 0.18 + pulse * 0.32;
 		const floatAmount = 0.04 + pulse * 0.018;
 		const wobble = 0.012 + pulse * 0.008;
 
-		if (floatPhaseRef.current === null) {
+		if (
+			floatPhaseRef.current === null ||
+			!Number.isFinite(floatPhaseRef.current)
+		) {
 			floatPhaseRef.current = elapsed * 0.72;
 		} else {
-			floatPhaseRef.current += delta * (0.72 + pulse * 0.18);
+			floatPhaseRef.current += safeDelta * (0.72 + pulse * 0.18);
 		}
 
 		if (floatRef.current) {
@@ -297,7 +329,11 @@ function SuspendedRose({
 		}
 
 		if (pivotRef.current) {
-			pivotRef.current.rotation.y += delta * orbitSpeed;
+			if (!Number.isFinite(pivotRef.current.rotation.y)) {
+				pivotRef.current.rotation.y = 0;
+			}
+
+			pivotRef.current.rotation.y += safeDelta * orbitSpeed;
 		}
 	});
 
@@ -354,9 +390,6 @@ function SceneCaptureController({
 				// R3F's `frameloop="never"` path subtracts this value directly
 				// from clock.elapsedTime, so it must remain in seconds.
 				advance(elapsedSeconds, true);
-				// The intermediary recorder canvas reads this WebGL canvas
-				// immediately. Force mobile GPUs to finish the frame before that copy.
-				gl.getContext().finish();
 			},
 			resetTimeline: () => {
 				audioEnergyRef.current = 0;
@@ -550,9 +583,7 @@ export function RoseScene({
 				camera={{ position: [0.2, 0.55, 8.9], fov: 34 }}
 				dpr={[1, 2]}
 				frameloop={videoCaptureActive ? "never" : "always"}
-				// Capture copies this WebGL canvas into a 2D recorder canvas. Mobile
-				// browsers may discard the rendered frame before that copy otherwise.
-				gl={{ alpha: true, preserveDrawingBuffer: true }}
+				gl={{ alpha: true }}
 				onCreated={({ camera, gl }) => {
 					gl.setClearAlpha(0);
 					camera.lookAt(0, 0.58, 0);
