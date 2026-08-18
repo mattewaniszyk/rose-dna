@@ -46,95 +46,6 @@ import {
 	resolveInitialExperienceSettings,
 } from "./random-settings";
 
-const LOADING_COMMAND = "Run ROSE-DNA.exe //////// loading ";
-const LOADING_DOT_CYCLES = 5;
-const LOADING_DOT_TYPING_DELAY = 280;
-const LOADING_DOT_CYCLE_DURATION = 1_250;
-
-function AppLoadingOverlay() {
-	const [displayedText, setDisplayedText] = useState("");
-	const [isLeaving, setIsLeaving] = useState(false);
-	const [isVisible, setIsVisible] = useState(true);
-
-	useEffect(() => {
-		const timeouts: number[] = [];
-		const schedule = (callback: () => void, delay: number) => {
-			timeouts.push(window.setTimeout(callback, delay));
-		};
-		const prefersReducedMotion = window.matchMedia(
-			"(prefers-reduced-motion: reduce)",
-		).matches;
-		const characterDelay = prefersReducedMotion ? 0 : 52;
-
-		if (prefersReducedMotion) {
-			setDisplayedText(`${LOADING_COMMAND}...`);
-		} else {
-			Array.from(LOADING_COMMAND).forEach((_, index) => {
-				schedule(
-					() => setDisplayedText(LOADING_COMMAND.slice(0, index + 1)),
-					characterDelay * (index + 1),
-				);
-			});
-
-			const commandTypingDuration = characterDelay * LOADING_COMMAND.length;
-
-			for (let cycle = 0; cycle < LOADING_DOT_CYCLES; cycle += 1) {
-				const cycleStart =
-					commandTypingDuration + cycle * LOADING_DOT_CYCLE_DURATION;
-
-				for (let dotCount = 1; dotCount <= 3; dotCount += 1) {
-					schedule(
-						() =>
-							setDisplayedText(
-								`${LOADING_COMMAND}${".".repeat(dotCount)}`,
-							),
-						cycleStart + LOADING_DOT_TYPING_DELAY * dotCount,
-					);
-				}
-
-				if (cycle < LOADING_DOT_CYCLES - 1) {
-					schedule(
-						() => setDisplayedText(LOADING_COMMAND),
-						cycleStart + LOADING_DOT_CYCLE_DURATION,
-					);
-				}
-			}
-		}
-
-		const animationDuration = prefersReducedMotion
-			? 650
-			: characterDelay * LOADING_COMMAND.length +
-				LOADING_DOT_CYCLES * LOADING_DOT_CYCLE_DURATION +
-				300;
-		schedule(() => setIsLeaving(true), animationDuration);
-		schedule(() => setIsVisible(false), animationDuration + 500);
-
-		return () => {
-			timeouts.forEach((timeout) => window.clearTimeout(timeout));
-		};
-	}, []);
-
-	if (!isVisible) {
-		return null;
-	}
-
-	return (
-		<div
-			className={`app-loading-overlay${isLeaving ? " is-leaving" : ""}`}
-			role="status"
-			aria-live="polite"
-		>
-			<span className="app-loading-copy" aria-hidden="true">
-				{displayedText}
-				{displayedText.length < LOADING_COMMAND.length ? (
-					<span className="app-loading-cursor" />
-				) : null}
-			</span>
-			<span className="app-loading-accessible-copy">ROSE-DNA is loading.</span>
-		</div>
-	);
-}
-
 function drawCanvasFrame(
 	context: CanvasRenderingContext2D,
 	source: HTMLCanvasElement,
@@ -233,7 +144,11 @@ function waitForSceneCapture(
 	});
 }
 
-function App() {
+export type AppProps = {
+	onReady?: () => void;
+};
+
+function App({ onReady }: AppProps) {
 	const initialSharedSettings = useMemo(
 		() => resolveInitialExperienceSettings(window.location.search),
 		[],
@@ -264,6 +179,11 @@ function App() {
 	const [controlsExpanded, setControlsExpanded] = useState(false);
 	const [artistStatementOpen, setArtistStatementOpen] = useState(false);
 	const unicornProjectId = BACKGROUND_MODE_PROJECT_IDS[backgroundMode];
+	const [isSceneReady, setIsSceneReady] = useState(false);
+	const [isBackgroundReady, setIsBackgroundReady] = useState(
+		() => !unicornProjectId,
+	);
+	const hasReportedReadyRef = useRef(false);
 	const sceneCaptureControllerRef =
 		useRef<RoseSceneCaptureController | null>(null);
 	const backdropReadyRef = useRef(false);
@@ -277,12 +197,30 @@ function App() {
 	const handleBackdropReadyChange = useCallback((ready: boolean) => {
 		backdropReadyRef.current = ready;
 	}, []);
+	const handleBackgroundReady = useCallback(() => {
+		setIsBackgroundReady(true);
+	}, []);
+	const handleSceneReady = useCallback(() => {
+		setIsSceneReady(true);
+	}, []);
 	const handleSceneCaptureControllerChange = useCallback(
 		(controller: RoseSceneCaptureController | null) => {
 			sceneCaptureControllerRef.current = controller;
 		},
 		[],
 	);
+	useEffect(() => {
+		if (
+			hasReportedReadyRef.current ||
+			!isSceneReady ||
+			!isBackgroundReady
+		) {
+			return;
+		}
+
+		hasReportedReadyRef.current = true;
+		onReady?.();
+	}, [isBackgroundReady, isSceneReady, onReady]);
 	const releaseVideoScene = useCallback(() => {
 		setIsVideoCaptureActive(false);
 		setVideoCaptureAudioBuffer(null);
@@ -452,7 +390,6 @@ function App() {
 					export as MIDI, MP3, or video.
 				</p>
 			</header>
-			<AppLoadingOverlay />
 			<ArtistStatement
 				isOpen={artistStatementOpen}
 				onOpenChange={handleArtistStatementOpenChange}
@@ -461,6 +398,7 @@ function App() {
 				<UnicornBackground
 					key={backgroundMode}
 					projectId={unicornProjectId}
+					onReady={handleBackgroundReady}
 				/>
 			) : null}
 			<RoseScene
@@ -474,6 +412,7 @@ function App() {
 				videoCaptureActive={isVideoCaptureActive}
 				videoCaptureAudioBuffer={videoCaptureAudioBuffer}
 				videoCaptureViewport={videoCaptureViewport}
+				onReady={handleSceneReady}
 				onSceneCaptureControllerChange={
 					handleSceneCaptureControllerChange
 				}

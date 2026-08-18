@@ -5,9 +5,13 @@ const UNICORN_SDK_URL =
 
 type UnicornBackgroundProps = {
 	projectId: string;
+	onReady?: () => void;
 };
 
-export function UnicornBackground({ projectId }: UnicornBackgroundProps) {
+export function UnicornBackground({
+	projectId,
+	onReady,
+}: UnicornBackgroundProps) {
 	return (
 		<div className="unicorn-background" aria-hidden="true">
 			<UnicornScene
@@ -19,6 +23,14 @@ export function UnicornBackground({ projectId }: UnicornBackgroundProps) {
 				height="100%"
 				lazyLoad={false}
 				production={true}
+				onLoad={onReady}
+				onError={(error) => {
+					console.warn(
+						"[rose-dna] Unicorn background failed to load; continuing without it.",
+						error,
+					);
+					onReady?.();
+				}}
 			/>
 		</div>
 	);

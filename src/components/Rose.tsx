@@ -15,7 +15,7 @@ import {
 	Vector3,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import roseModelUrl from "../assets/rose-model/rose.glb?url";
+import { ROSE_MODEL_URL } from "../experience-assets";
 import {
 	createLiquidMetalMaterial,
 	type LiquidMetalParams,
@@ -524,7 +524,7 @@ function cloneMaterial(
 }
 
 export function Rose({ materialPreset = "default" }: RoseProps) {
-	const gltf = useLoader(GLTFLoader, roseModelUrl);
+	const gltf = useLoader(GLTFLoader, ROSE_MODEL_URL);
 	const materialConfig = isRoseShaderPreset(materialPreset)
 		? null
 		: ROSE_MATERIAL_CONFIGS[materialPreset];

@@ -361,6 +361,25 @@ type SceneCaptureControllerProps = {
 	onChange?: (controller: RoseSceneCaptureController | null) => void;
 };
 
+type SceneReadyProps = {
+	onReady?: () => void;
+};
+
+function SceneReady({ onReady }: SceneReadyProps) {
+	const hasReportedReadyRef = useRef(false);
+
+	useFrame(() => {
+		if (hasReportedReadyRef.current) {
+			return;
+		}
+
+		hasReportedReadyRef.current = true;
+		onReady?.();
+	});
+
+	return null;
+}
+
 function SceneCaptureController({
 	active,
 	audioEnergyRef,
@@ -437,6 +456,7 @@ type RoseSceneProps = {
 		controller: RoseSceneCaptureController | null,
 	) => void;
 	onBackdropReadyChange?: (ready: boolean) => void;
+	onReady?: () => void;
 	getPlaybackPosition: () => number;
 	getVisualizationAudioFrame: () => VisualizationAudioFrame;
 	isPlaying: boolean;
@@ -460,6 +480,7 @@ export function RoseScene({
 	onSceneCanvasChange,
 	onSceneCaptureControllerChange,
 	onBackdropReadyChange,
+	onReady,
 	getPlaybackPosition,
 	getVisualizationAudioFrame,
 	isPlaying,
@@ -672,6 +693,7 @@ export function RoseScene({
 						captureAudioEnergyRef={captureAudioEnergyRef}
 						videoCaptureActive={videoCaptureActive}
 					/>
+					<SceneReady onReady={onReady} />
 				</Suspense>
 			</Canvas>
 		</div>
