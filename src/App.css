@@ -49,12 +49,25 @@
 }
 
 .app-control-stack {
-	pointer-events: auto;
+	pointer-events: none;
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
 	gap: 0.75rem;
 	max-width: min(23.5rem, calc(100vw - 2rem));
+}
+
+.app-configuration-controls {
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 0.75rem;
+	pointer-events: auto;
+}
+
+.app-configuration-controls[hidden] {
+	display: none;
 }
 
 .app-menu,
@@ -81,7 +94,12 @@
 	width: 100%;
 	flex-wrap: wrap;
 	justify-content: flex-end;
-	gap: 0.75rem;
+	gap: 0.5rem;
+	pointer-events: auto;
+}
+
+.controls-toggle[aria-expanded="true"] {
+	background: rgba(255, 255, 255, 0.12);
 }
 
 .scene-menu-panel,
@@ -606,6 +624,33 @@
 		);
 	}
 
+}
+
+@media (max-width: 720px) and (orientation: portrait) {
+	.utility-controls {
+		flex-wrap: nowrap;
+	}
+
+	.utility-controls .randomize-control > button,
+	.utility-controls .share-settings-control > button {
+		width: 2.75rem;
+		padding-right: 0;
+		padding-left: 0;
+		justify-content: center;
+		gap: 0;
+	}
+
+	.utility-action-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
 }
 
 .scene {

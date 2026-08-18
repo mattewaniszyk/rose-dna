@@ -87,10 +87,12 @@ export function ShareSettingsButton({ url }: ShareSettingsButtonProps) {
 			<Button
 				type="button"
 				variant="outline"
-				className="h-11 w-fit justify-between gap-3 rounded-full border-white/10 bg-black/55 px-5 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+				className="h-11 w-fit justify-between gap-3 rounded-full border-white/10 bg-black/55 px-4 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
 				onClick={() => void handleCopy()}
 			>
-				<span aria-live="polite">{label}</span>
+				<span className="utility-action-label" aria-live="polite">
+					{label}
+				</span>
 				<StatusIcon className="size-4" aria-hidden="true" />
 			</Button>
 		</div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DicesIcon, Loader2Icon } from "lucide-react";
+import { DicesIcon, Loader2Icon, MenuIcon, XIcon } from "lucide-react";
 import "./App.css";
 import { Button } from "./components/ui/button";
 import { AudioPanel } from "./components/AudioPanel";
@@ -162,6 +162,7 @@ function App() {
 		useState<VisualLayoutPreset>(
 			initialSharedSettings.settings.visualLayoutPreset,
 		);
+	const [controlsExpanded, setControlsExpanded] = useState(false);
 	const unicornProjectId = BACKGROUND_MODE_PROJECT_IDS[backgroundMode];
 	const sceneCaptureControllerRef =
 		useRef<RoseSceneCaptureController | null>(null);
@@ -359,41 +360,17 @@ function App() {
 			/>
 			<div className="app-overlay">
 				<div className="app-control-stack">
-					<BackgroundMenu
-						disabled={isExporting}
-						backgroundMode={backgroundMode}
-						onBackgroundModeChange={setBackgroundMode}
-						roseAnglePreset={roseAnglePreset}
-						onRoseAnglePresetChange={setRoseAnglePreset}
-						roseMaterialPreset={roseMaterialPreset}
-						onRoseMaterialPresetChange={setRoseMaterialPreset}
-						overlayEffect={overlayEffect}
-						onOverlayEffectChange={setOverlayEffect}
-					/>
-					<VisualLayersMenu
-						bottomVisualizationEnabled={bottomVisualizationEnabled}
-						bottomVisualizationMode={bottomVisualizationMode}
-						disabled={isExporting}
-						hasSequence={Boolean(genomicAudio.sequence?.events.length)}
-						onBottomVisualizationEnabledChange={setBottomVisualizationEnabled}
-						onBottomVisualizationModeChange={setBottomVisualizationMode}
-						onStepwiseBackgroundEnabledChange={setStepwiseBackgroundEnabled}
-						stepwiseBackgroundEnabled={stepwiseBackgroundEnabled}
-						onVisualLayoutPresetChange={setVisualLayoutPreset}
-						visualLayoutPreset={visualLayoutPreset}
-					/>
-					<AudioPanel audio={genomicAudio} />
 					<div className="utility-controls">
 						<div className="randomize-control">
 							<Button
 								type="button"
 								variant="outline"
-								className="h-11 w-fit justify-between gap-3 rounded-full border-white/10 bg-black/55 px-5 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+								className="h-11 w-fit justify-between gap-3 rounded-full border-white/10 bg-black/55 px-4 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
 								onClick={() => void handleRandomize()}
 								disabled={isRandomizeDisabled}
 								aria-busy={genomicAudio.isRandomizing}
 							>
-								<span>
+								<span className="utility-action-label">
 									{genomicAudio.isRandomizing ? "Randomizing..." : "Randomize"}
 								</span>
 								{genomicAudio.isRandomizing ? (
@@ -404,6 +381,57 @@ function App() {
 							</Button>
 						</div>
 						<ShareSettingsButton url={shareUrl} />
+						<Button
+							type="button"
+							variant="outline"
+							size="icon"
+							className="controls-toggle h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+							aria-controls="app-configuration-controls"
+							aria-expanded={controlsExpanded}
+							aria-label={controlsExpanded ? "Hide controls" : "Show controls"}
+							title={controlsExpanded ? "Hide controls" : "Show controls"}
+							onClick={() => setControlsExpanded((expanded) => !expanded)}
+						>
+							{controlsExpanded ? (
+								<XIcon className="size-4" aria-hidden="true" />
+							) : (
+								<MenuIcon className="size-4" aria-hidden="true" />
+							)}
+						</Button>
+					</div>
+					<div
+						id="app-configuration-controls"
+						className="app-configuration-controls"
+						hidden={!controlsExpanded}
+					>
+						{controlsExpanded ? (
+							<>
+								<BackgroundMenu
+									disabled={isExporting}
+									backgroundMode={backgroundMode}
+									onBackgroundModeChange={setBackgroundMode}
+									roseAnglePreset={roseAnglePreset}
+									onRoseAnglePresetChange={setRoseAnglePreset}
+									roseMaterialPreset={roseMaterialPreset}
+									onRoseMaterialPresetChange={setRoseMaterialPreset}
+									overlayEffect={overlayEffect}
+									onOverlayEffectChange={setOverlayEffect}
+								/>
+								<VisualLayersMenu
+									bottomVisualizationEnabled={bottomVisualizationEnabled}
+									bottomVisualizationMode={bottomVisualizationMode}
+									disabled={isExporting}
+									hasSequence={Boolean(genomicAudio.sequence?.events.length)}
+									onBottomVisualizationEnabledChange={setBottomVisualizationEnabled}
+									onBottomVisualizationModeChange={setBottomVisualizationMode}
+									onStepwiseBackgroundEnabledChange={setStepwiseBackgroundEnabled}
+									stepwiseBackgroundEnabled={stepwiseBackgroundEnabled}
+									onVisualLayoutPresetChange={setVisualLayoutPreset}
+									visualLayoutPreset={visualLayoutPreset}
+								/>
+								<AudioPanel audio={genomicAudio} />
+							</>
+						) : null}
 					</div>
 				</div>
 			</div>
