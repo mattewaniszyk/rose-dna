@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, OrbitIcon } from "lucide-react";
 import {
 	BACKGROUND_MODE_LABELS,
 	BACKGROUND_OPTIONS,
@@ -75,12 +75,15 @@ export function BackgroundMenu({
 						variant="outline"
 						className="group h-11 min-w-[14rem] justify-between gap-3 rounded-full border-white/10 bg-black/55 pl-5 pr-4 text-left text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white sm:min-w-[16rem]"
 					>
-						<span className="flex min-w-0 flex-col items-start gap-0.5">
-							<span className="text-[0.64rem] font-medium uppercase tracking-[0.22em] text-white/55">
-								Scene
-							</span>
-							<span className="max-w-[12.5rem] truncate text-sm font-medium text-white/92 sm:max-w-[15.5rem]">
-								{summary}
+						<span className="flex min-w-0 flex-1 items-center gap-3">
+							<OrbitIcon className="size-4 shrink-0 text-white/65" />
+							<span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+								<span className="text-[0.64rem] font-medium uppercase tracking-[0.22em] text-white/55">
+									Scene
+								</span>
+								<span className="w-full truncate text-sm font-medium text-white/92">
+									{summary}
+								</span>
 							</span>
 						</span>
 						<ChevronDownIcon className="size-4 text-white/60 transition-transform duration-200 group-data-[state=open]:rotate-180" />
@@ -90,7 +93,7 @@ export function BackgroundMenu({
 					align="end"
 					collisionPadding={12}
 					sideOffset={10}
-					className="scene-menu-panel rounded-3xl border border-white/10 bg-black/80 p-2 text-white shadow-[0_22px_65px_rgba(0,0,0,0.48)] backdrop-blur-xl"
+					className="scene-menu-panel rounded-3xl p-2"
 				>
 					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
 						Scene Background

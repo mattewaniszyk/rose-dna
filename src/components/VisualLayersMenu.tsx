@@ -60,13 +60,13 @@ export function VisualLayersMenu({
 						variant="outline"
 						className="group h-11 min-w-[14rem] justify-between gap-3 rounded-full border-white/10 bg-black/55 pl-5 pr-4 text-left text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white sm:min-w-[16rem]"
 					>
-						<span className="flex min-w-0 items-center gap-3">
+						<span className="flex min-w-0 flex-1 items-center gap-3">
 							<Layers3Icon className="size-4 shrink-0 text-white/65" />
-							<span className="flex min-w-0 flex-col items-start gap-0.5">
+							<span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
 								<span className="text-[0.64rem] font-medium uppercase tracking-[0.22em] text-white/55">
 									Visual Layers
 								</span>
-								<span className="max-w-[12rem] truncate text-sm font-medium text-white/92">
+								<span className="w-full truncate text-sm font-medium text-white/92">
 									{activeSummary}
 								</span>
 							</span>
