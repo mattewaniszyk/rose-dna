@@ -10,7 +10,11 @@ import { BACKGROUND_OPTIONS } from "@/components/background-mode";
 import { OVERLAY_EFFECT_OPTIONS } from "@/components/overlay-effect";
 import { ROSE_ANGLE_PRESET_OPTIONS } from "@/components/rose-angle";
 import { ROSE_MATERIAL_OPTIONS } from "@/components/rose-material";
-import type { SharedAppSettings } from "@/shared-settings";
+import {
+	parseSharedSettings,
+	type ParsedSharedSettings,
+	type SharedAppSettings,
+} from "@/shared-settings";
 import {
 	BOTTOM_VISUALIZATION_MODES,
 	VISUAL_LAYOUT_PRESETS,
@@ -104,5 +108,21 @@ export function createRandomizedExperienceSettings(
 			videoAspectRatio: current.audio.videoAspectRatio,
 			videoQuality: current.audio.videoQuality,
 		},
+	};
+}
+
+export function resolveInitialExperienceSettings(
+	search: string,
+	random: () => number = Math.random,
+): ParsedSharedSettings {
+	const parsed = parseSharedSettings(search);
+
+	if (parsed.shouldAutoLoad) {
+		return parsed;
+	}
+
+	return {
+		settings: createRandomizedExperienceSettings(parsed.settings, random),
+		shouldAutoLoad: true,
 	};
 }

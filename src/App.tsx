@@ -39,10 +39,12 @@ import {
 } from "./visualization/types";
 import {
 	buildSharedSettingsUrl,
-	parseSharedSettings,
 	type SharedAppSettings,
 } from "./shared-settings";
-import { createRandomizedExperienceSettings } from "./random-settings";
+import {
+	createRandomizedExperienceSettings,
+	resolveInitialExperienceSettings,
+} from "./random-settings";
 
 const LOADING_COMMAND = "Run ROSE-DNA.exe //////// loading ";
 const LOADING_DOT_CYCLES = 5;
@@ -233,7 +235,7 @@ function waitForSceneCapture(
 
 function App() {
 	const initialSharedSettings = useMemo(
-		() => parseSharedSettings(window.location.search),
+		() => resolveInitialExperienceSettings(window.location.search),
 		[],
 	);
 	const [backgroundMode, setBackgroundMode] =

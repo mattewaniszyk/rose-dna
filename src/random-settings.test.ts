@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	CANONICAL_BASES,
 	GROUP_ENDING_MODES,
@@ -21,8 +21,12 @@ import {
 	RANDOM_TEMPOS,
 	RANDOM_VOICE_OCTAVES,
 	RANDOM_VOICE_VOLUMES,
+	resolveInitialExperienceSettings,
 } from "@/random-settings";
-import { createDefaultSharedAppSettings } from "@/shared-settings";
+import {
+	buildSharedSettingsUrl,
+	createDefaultSharedAppSettings,
+} from "@/shared-settings";
 import {
 	BOTTOM_VISUALIZATION_MODES,
 	VISUAL_LAYOUT_PRESETS,
@@ -34,6 +38,66 @@ function cyclingRandom(values: number[]) {
 }
 
 describe("random experience settings", () => {
+	it("randomizes a parameter-free initial experience", () => {
+		const resolved = resolveInitialExperienceSettings("", () => 0);
+		const expected = createRandomizedExperienceSettings(
+			createDefaultSharedAppSettings(),
+			() => 0,
+		);
+
+		expect(resolved).toEqual({
+			settings: expected,
+			shouldAutoLoad: true,
+		});
+	});
+
+	it("randomizes when only unrelated parameters are present and preserves them", () => {
+		const resolved = resolveInitialExperienceSettings(
+			"?utm_source=gallery",
+			() => 0,
+		);
+		const url = buildSharedSettingsUrl(
+			"https://example.com/rose?utm_source=gallery#bloom",
+			resolved.settings,
+		);
+
+		expect(resolved.shouldAutoLoad).toBe(true);
+		expect(url.searchParams.get("utm_source")).toBe("gallery");
+		expect(url.searchParams.get("settings")).toBe("1");
+		expect(url.hash).toBe("#bloom");
+	});
+
+	it("preserves supported shared settings without consuming randomness", () => {
+		const random = vi.fn(() => 0);
+		const resolved = resolveInitialExperienceSettings(
+			"?settings=1&bg=space&tempo=144",
+			random,
+		);
+
+		expect(resolved.settings.backgroundMode).toBe("space");
+		expect(resolved.settings.audio.mappingOptions.tempoBpm).toBe(144);
+		expect(resolved.shouldAutoLoad).toBe(true);
+		expect(random).not.toHaveBeenCalled();
+	});
+
+	it("randomizes unsupported and unversioned shared parameters", () => {
+		const unsupported = resolveInitialExperienceSettings(
+			"?settings=2&bg=space",
+			() => 0,
+		);
+		const unversioned = resolveInitialExperienceSettings(
+			"?bg=space",
+			() => 0,
+		);
+
+		expect(unsupported.settings.backgroundMode).toBe(
+			unversioned.settings.backgroundMode,
+		);
+		expect(unsupported.settings.backgroundMode).not.toBe("space");
+		expect(unsupported.shouldAutoLoad).toBe(true);
+		expect(unversioned.shouldAutoLoad).toBe(true);
+	});
+
 	it("uses only supported curated values", () => {
 		const current = createDefaultSharedAppSettings();
 		const settings = createRandomizedExperienceSettings(

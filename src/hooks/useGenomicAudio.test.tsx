@@ -9,7 +9,7 @@ import {
 	DEFAULT_MAPPING_OPTIONS,
 	DEFAULT_VOICE_SETTINGS,
 } from "@/audio/types";
-import { parseSharedSettings } from "@/shared-settings";
+import { resolveInitialExperienceSettings } from "@/random-settings";
 import { useGenomicAudio } from "./useGenomicAudio";
 
 const loadAndMapFastqFixtureMock = vi.hoisted(() => vi.fn());
@@ -46,13 +46,20 @@ const loadedFixture: LoadMapResult = {
 };
 
 function AudioStatus({ search }: { search: string }) {
-	const initialSettings = parseSharedSettings(search);
+	const initialSettings = resolveInitialExperienceSettings(search, () => 0);
 	const audio = useGenomicAudio(undefined, {
 		autoLoadInitialFixture: initialSettings.shouldAutoLoad,
 		initialSettings: initialSettings.settings.audio,
 	});
 
-	return <output data-testid="build-status">{audio.buildStatus}</output>;
+	return (
+		<output
+			data-testid="build-status"
+			data-playing={String(audio.isPlaying)}
+		>
+			{audio.buildStatus}
+		</output>
+	);
 }
 
 describe("useGenomicAudio initial loading", () => {
@@ -79,16 +86,20 @@ describe("useGenomicAudio initial loading", () => {
 		expect(loadOptions?.signal.aborted).toBe(false);
 	});
 
-	it("keeps an ordinary URL idle until loading is requested", async () => {
+	it("loads a randomized parameter-free URL once without starting playback", async () => {
+		loadAndMapFastqFixtureMock.mockResolvedValue(loadedFixture);
+
 		const view = render(
 			<StrictMode>
 				<AudioStatus search="" />
 			</StrictMode>,
 		);
 
-		await new Promise((resolve) => window.setTimeout(resolve, 10));
+		await waitFor(() => {
+			expect(view.getByTestId("build-status").textContent).toBe("ready");
+		});
 
-		expect(view.getByTestId("build-status").textContent).toBe("idle");
-		expect(loadAndMapFastqFixtureMock).not.toHaveBeenCalled();
+		expect(view.getByTestId("build-status").dataset.playing).toBe("false");
+		expect(loadAndMapFastqFixtureMock).toHaveBeenCalledTimes(1);
 	});
 });
