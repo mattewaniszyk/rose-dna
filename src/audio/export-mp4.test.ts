@@ -8,6 +8,8 @@ const mockState = vi.hoisted(() => ({
 	writtenFiles: [] as string[],
 	deletedFiles: [] as string[],
 	invalidOutputCount: 0,
+	suppressedRecorderStarts: 0,
+	suppressedRecorderStops: 0,
 	recorders: [] as Array<{ state: string; stop: () => void }>,
 	recorderOptions: [] as Array<{ videoBitsPerSecond?: number }>,
 	recorderStreams: [] as MockMediaStream[],
@@ -123,6 +125,10 @@ class MockMediaRecorder {
 
 	start() {
 		this.state = "recording";
+		if (mockState.suppressedRecorderStarts > 0) {
+			mockState.suppressedRecorderStarts -= 1;
+			return;
+		}
 
 		for (const callback of this.listeners.get("start") ?? []) {
 			callback({ data: new Blob() });
@@ -155,6 +161,10 @@ class MockMediaRecorder {
 						})()
 					: new Uint8Array([1, 2, 3]);
 			callback({ data: new Blob([bytes]) });
+		}
+		if (mockState.suppressedRecorderStops > 0) {
+			mockState.suppressedRecorderStops -= 1;
+			return;
 		}
 
 		for (const callback of this.listeners.get("stop") ?? []) {
@@ -327,6 +337,8 @@ describe("MP4 export", () => {
 		mockState.writtenFiles.length = 0;
 		mockState.deletedFiles.length = 0;
 		mockState.invalidOutputCount = 0;
+		mockState.suppressedRecorderStarts = 0;
+		mockState.suppressedRecorderStops = 0;
 		mockState.recorders.length = 0;
 		mockState.recorderOptions.length = 0;
 		mockState.recorderStreams.length = 0;
@@ -722,6 +734,50 @@ describe("MP4 export", () => {
 		expect(stages).not.toContain("encoding-mp4");
 	});
 
+	it("falls back to video-only MP4 remux when native audio recording never starts", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		mockState.suppressedRecorderStarts = 1;
+		const stages: string[] = [];
+		const promise = exportSequenceToMp4(sequence, {
+			audioContext: createMockAudioContext(),
+			prepareScene: vi.fn(async () => createCaptureSession()),
+			onProgress: ({ stage }) => stages.push(stage),
+		});
+
+		await vi.advanceTimersByTimeAsync(5_001);
+		await vi.runAllTimersAsync();
+		const blob = await promise;
+
+		expect(blob.type).toBe("video/mp4");
+		expect(mockState.recorders).toHaveLength(2);
+		expect(mockState.recorderStreams[0]?.getTracks()).toHaveLength(2);
+		expect(mockState.recorderStreams[1]?.getTracks()).toHaveLength(1);
+		expect(mockState.encoderLoads).toBe(1);
+		expect(stages).toContain("loading-encoder");
+		expect(stages).toContain("encoding-mp4");
+		const command = mockState.commands[0] ?? [];
+		expect(command[command.indexOf("-c:v") + 1]).toBe("copy");
+		expect(command).toContain("aac");
+	});
+
+	it("falls back to video-only MP4 remux when native audio recording never stops", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		mockState.suppressedRecorderStops = 1;
+		const promise = exportSequenceToMp4(sequence, {
+			audioContext: createMockAudioContext(),
+			prepareScene: vi.fn(async () => createCaptureSession()),
+		});
+
+		await vi.advanceTimersByTimeAsync(10_100);
+		await vi.runAllTimersAsync();
+		await expect(promise).resolves.toBeInstanceOf(Blob);
+		expect(mockState.recorders).toHaveLength(2);
+		expect(mockState.encoderLoads).toBe(1);
+		expect(mockState.commands).toHaveLength(1);
+	});
+
 	it("rejects unsupported capture and honors pre-recording cancellation", async () => {
 		vi.stubGlobal("MediaRecorder", undefined);
 		expect(isMp4ExportSupported()).toBe(false);
@@ -746,7 +802,7 @@ describe("MP4 export", () => {
 		).rejects.toThrow("cancelled");
 	});
 
-	it("rejects invalid native MP4 output and allows a clean retry", async () => {
+	it("falls back from invalid native MP4 output to a clean remux", async () => {
 		mockState.supportedMimeTypes.clear();
 		mockState.supportedMimeTypes.add("video/mp4");
 		mockState.invalidOutputCount = 1;
@@ -755,18 +811,11 @@ describe("MP4 export", () => {
 			prepareScene: vi.fn(async () => createCaptureSession()),
 		};
 
-		const first = exportSequenceToMp4(sequence, options);
-		const firstExpectation = expect(first).rejects.toThrow(
-			"invalid or empty MP4",
-		);
-		await vi.advanceTimersByTimeAsync(40);
-		await firstExpectation;
-
-		const second = exportSequenceToMp4(sequence, options);
-		await vi.advanceTimersByTimeAsync(40);
-		await expect(second).resolves.toBeInstanceOf(Blob);
-		expect(mockState.encoderLoads).toBe(0);
-		expect(mockState.commands).toEqual([]);
+		const promise = exportSequenceToMp4(sequence, options);
+		await vi.advanceTimersByTimeAsync(80);
+		await expect(promise).resolves.toBeInstanceOf(Blob);
+		expect(mockState.encoderLoads).toBe(1);
+		expect(mockState.commands).toHaveLength(1);
 	});
 
 	it("rejects invalid FFmpeg MP4 output and allows a clean retry", async () => {

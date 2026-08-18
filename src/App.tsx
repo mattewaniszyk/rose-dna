@@ -444,6 +444,14 @@ function App() {
 
 	return (
 		<main className="app-shell" data-background-mode={backgroundMode}>
+			<header className="app-semantic-intro">
+				<h1>Rose DNA</h1>
+				<p>
+					Rose DNA is an interactive artwork that maps FASTQ DNA sequencing
+					reads to music and movement through a 3D rose you can explore and
+					export as MIDI, MP3, or video.
+				</p>
+			</header>
 			<AppLoadingOverlay />
 			<ArtistStatement
 				isOpen={artistStatementOpen}

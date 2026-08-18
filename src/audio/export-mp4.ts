@@ -23,6 +23,8 @@ import {
 
 const VIDEO_FRAME_RATE = 30;
 const PROGRESS_UPDATE_INTERVAL_FRAMES = 6;
+const RECORDER_START_TIMEOUT_MS = 5_000;
+const RECORDER_STOP_TIMEOUT_MS = 10_000;
 const VIDEO_MIME_TYPES = [
 	"video/mp4",
 	"video/mp4;codecs=avc1.42E01E",
@@ -207,16 +209,11 @@ export async function recordCanvas(
 			return;
 		}
 
-		if (isNativeMp4MimeType(mimeType)) {
-			if (!options.audioBuffer || !options.audioContext) {
-				for (const track of stream.getTracks()) {
-					track.stop();
-				}
-
-				reject(new Error("Native MP4 capture requires rendered audio."));
-				return;
-			}
-
+		if (
+			isNativeMp4MimeType(mimeType) &&
+			options.audioBuffer &&
+			options.audioContext
+		) {
 			try {
 				const audioDestination =
 					options.audioContext.createMediaStreamDestination();
@@ -262,6 +259,8 @@ export async function recordCanvas(
 			return;
 		}
 		let frameTimer = 0;
+		let recorderStartTimer = 0;
+		let recorderStopTimer = 0;
 		let finishFrameWait: (() => void) | null = null;
 		let settled = false;
 		let terminalError: Error | null = null;
@@ -281,6 +280,8 @@ export async function recordCanvas(
 
 		const cleanup = () => {
 			window.clearTimeout(frameTimer);
+			window.clearTimeout(recorderStartTimer);
+			window.clearTimeout(recorderStopTimer);
 			finishFrameWait?.();
 			finishFrameWait = null;
 			options.signal?.removeEventListener("abort", onAbort);
@@ -288,6 +289,34 @@ export async function recordCanvas(
 			stopAudioSource();
 			for (const track of stream.getTracks()) {
 				track.stop();
+			}
+		};
+		const stopRecorder = () => {
+			window.clearTimeout(recorderStopTimer);
+			recorderStopTimer = window.setTimeout(() => {
+				if (settled) {
+					return;
+				}
+
+				settled = true;
+				const error =
+					terminalError ??
+					new Error("Timed out while finalizing the video recording.");
+				cleanup();
+				reject(error);
+			}, RECORDER_STOP_TIMEOUT_MS);
+
+			try {
+				recorder.stop();
+			} catch (error) {
+				settled = true;
+				cleanup();
+				reject(
+					terminalError ??
+						(error instanceof Error
+							? error
+							: new Error("The browser could not stop video recording.")),
+				);
 			}
 		};
 
@@ -303,7 +332,7 @@ export async function recordCanvas(
 				cleanup();
 				reject(error);
 			} else {
-				recorder.stop();
+				stopRecorder();
 			}
 		};
 
@@ -384,7 +413,11 @@ export async function recordCanvas(
 				}
 
 				if (recorder.state !== "inactive") {
-					recorder.stop();
+					stopRecorder();
+				} else {
+					settleWithError(
+						new Error("The browser stopped video recording unexpectedly."),
+					);
 				}
 			} catch (error) {
 				settleWithError(
@@ -404,6 +437,7 @@ export async function recordCanvas(
 			settleWithError(new Error("The browser could not record the scene."));
 		});
 		recorder.addEventListener("start", () => {
+			window.clearTimeout(recorderStartTimer);
 			try {
 				if (audioSource) {
 					audioSource.start();
@@ -447,6 +481,11 @@ export async function recordCanvas(
 		options.onProgress?.(0);
 
 		try {
+			recorderStartTimer = window.setTimeout(() => {
+				settleWithError(
+					new Error("Timed out while starting the video recording."),
+				);
+			}, RECORDER_START_TIMEOUT_MS);
 			recorder.start(1_000);
 		} catch (error) {
 			settleWithError(
@@ -519,32 +558,48 @@ export async function exportSequenceToMp4(
 		options.onProgress?.({ stage: "preparing-scene", progress: 1 });
 
 		options.onProgress?.({ stage: "recording-video", progress: 0 });
-		const recording = await recordCanvas(captureSession, {
-			durationSeconds: sequence.runtimeSeconds,
-			energyEnvelope,
-			mimeType,
-			audioBuffer: recordingIsMp4 ? audioBuffer : undefined,
-			audioContext: recordingIsMp4 ? options.audioContext : undefined,
-			recordingBitRate: quality.recordingBitRate,
-			signal: options.signal,
-			onProgress: (progress) =>
-				options.onProgress?.({ stage: "recording-video", progress }),
-		});
+		const activeCaptureSession = captureSession;
+		const recordVideo = (includeNativeAudio: boolean) =>
+			recordCanvas(activeCaptureSession, {
+				durationSeconds: sequence.runtimeSeconds,
+				energyEnvelope,
+				mimeType,
+				audioBuffer: includeNativeAudio ? audioBuffer : undefined,
+				audioContext: includeNativeAudio ? options.audioContext : undefined,
+				recordingBitRate: quality.recordingBitRate,
+				signal: options.signal,
+				onProgress: (progress) =>
+					options.onProgress?.({ stage: "recording-video", progress }),
+			});
+		let recording: Blob;
+		let nativeRecordingIncludesAudio = false;
+
+		if (recordingIsMp4 && options.audioContext) {
+			try {
+				recording = await recordVideo(true);
+				const header = new Uint8Array(
+					await recording.slice(0, 12).arrayBuffer(),
+				);
+
+				if (!looksLikeMp4(header)) {
+					throw new Error("The browser returned an invalid or empty MP4 file.");
+				}
+
+				nativeRecordingIncludesAudio = true;
+			} catch {
+				throwIfAborted(options.signal, "MP4 export was cancelled.");
+				options.onProgress?.({ stage: "recording-video", progress: 0 });
+				recording = await recordVideo(false);
+			}
+		} else {
+			recording = await recordVideo(false);
+		}
 
 		captureSession.release();
 		captureSession = null;
 		throwIfAborted(options.signal, "MP4 export was cancelled.");
 
-		if (recordingIsMp4) {
-			const header = new Uint8Array(
-				await recording.slice(0, 12).arrayBuffer(),
-			);
-
-			if (!looksLikeMp4(header)) {
-				throw new Error("The browser returned an invalid or empty MP4 file.");
-			}
-
-			throwIfAborted(options.signal, "MP4 export was cancelled.");
+		if (nativeRecordingIncludesAudio) {
 			return recording;
 		}
 
@@ -553,7 +608,7 @@ export async function exportSequenceToMp4(
 		options.onProgress?.({ stage: "loading-encoder", progress: 1 });
 
 		const id = crypto.randomUUID();
-		const videoName = `video-${id}.webm`;
+		const videoName = `video-${id}.${recordingIsMp4 ? "mp4" : "webm"}`;
 		const audioName = `audio-${id}.wav`;
 		const mp4Name = `output-${id}.mp4`;
 		const wavData = createWavFromAudioBuffer(audioBuffer, 2);
@@ -596,6 +651,20 @@ export async function exportSequenceToMp4(
 				// keep the video stream alive through the requested audio runtime.
 				`tpad=stop_mode=clone:stop_duration=${duration}`,
 			].join(",");
+			const videoEncodingArgs = recordingIsMp4
+				? ["-c:v", "copy"]
+				: [
+						"-vf",
+						videoFilter,
+						"-c:v",
+						"libx264",
+						"-preset",
+						quality.x264Preset,
+						"-crf",
+						String(quality.crf),
+						"-pix_fmt",
+						"yuv420p",
+					];
 			const resultCode = await ffmpeg.exec(
 				[
 					"-i",
@@ -606,16 +675,7 @@ export async function exportSequenceToMp4(
 					"0:v:0",
 					"-map",
 					"1:a:0",
-					"-vf",
-					videoFilter,
-					"-c:v",
-					"libx264",
-					"-preset",
-					quality.x264Preset,
-					"-crf",
-					String(quality.crf),
-					"-pix_fmt",
-					"yuv420p",
+					...videoEncodingArgs,
 					"-aspect",
 					aspectRatio,
 					"-c:a",
