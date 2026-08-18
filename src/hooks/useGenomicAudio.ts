@@ -85,6 +85,25 @@ function stringifyUnknownError(error: unknown) {
 	return JSON.stringify(error);
 }
 
+function cloneMappingOptions(mappingOptions: MappingOptions): MappingOptions {
+	return {
+		...mappingOptions,
+		voiceSettings: {
+			A: { ...mappingOptions.voiceSettings.A },
+			C: { ...mappingOptions.voiceSettings.C },
+			G: { ...mappingOptions.voiceSettings.G },
+			T: { ...mappingOptions.voiceSettings.T },
+		},
+	};
+}
+
+function getSourceConfigurationKey(
+	selectedFixtureId: string,
+	parseOptions: FastqParseOptions,
+) {
+	return `${selectedFixtureId}:${JSON.stringify(parseOptions)}`;
+}
+
 export function useGenomicAudio(
 	videoExportBridge?: VideoExportBridge,
 	options: UseGenomicAudioOptions = {},
@@ -140,6 +159,7 @@ export function useGenomicAudio(
 	const [previewingBase, setPreviewingBase] =
 		useState<CanonicalBase | null>(null);
 	const [isPreparingVoices, setIsPreparingVoices] = useState(false);
+	const [isRandomizing, setIsRandomizing] = useState(false);
 	const shouldAutoLoadInitialFixtureRef = useRef(
 		options.autoLoadInitialFixture ?? false,
 	);
@@ -155,9 +175,14 @@ export function useGenomicAudio(
 	const waveformAnalyserRef = useRef<Tone.Analyser | null>(null);
 	const spectrumAnalyserRef = useRef<Tone.Analyser | null>(null);
 	const partRef = useRef<ScheduledGenomicPlayback | null>(null);
+	const loadAbortControllerRef = useRef<AbortController | null>(null);
 	const exportAbortControllerRef = useRef<AbortController | null>(null);
 	const hasLoadedEncoderRef = useRef(false);
-	const sourceConfigurationKey = `${selectedFixtureId}:${JSON.stringify(parseOptions)}`;
+	const loadRequestIdRef = useRef(0);
+	const sourceConfigurationKey = getSourceConfigurationKey(
+		selectedFixtureId,
+		parseOptions,
+	);
 	const mappingConfigurationKey = JSON.stringify(mappingOptions);
 	const previousSourceConfigurationKeyRef = useRef(sourceConfigurationKey);
 	const previousMappingConfigurationKeyRef = useRef(mappingConfigurationKey);
@@ -436,6 +461,12 @@ export function useGenomicAudio(
 		}
 
 		previousSourceConfigurationKeyRef.current = sourceConfigurationKey;
+		loadRequestIdRef.current += 1;
+		loadAbortControllerRef.current?.abort(
+			new DOMException("FASTQ loading was superseded.", "AbortError"),
+		);
+		loadAbortControllerRef.current = null;
+		setIsRandomizing(false);
 		loadedSourceConfigurationKeyRef.current = null;
 		stopVoicePreview();
 		disposeSignalChain();
@@ -468,6 +499,12 @@ export function useGenomicAudio(
 		}
 
 		previousMappingConfigurationKeyRef.current = mappingConfigurationKey;
+		loadRequestIdRef.current += 1;
+		loadAbortControllerRef.current?.abort(
+			new DOMException("FASTQ loading was superseded.", "AbortError"),
+		);
+		loadAbortControllerRef.current = null;
+		setIsRandomizing(false);
 		stopVoicePreview();
 		disposeSignalChain();
 		resetTransport();
@@ -580,18 +617,30 @@ export function useGenomicAudio(
 	);
 
 	const loadSelectedFixture = useCallback(async () => {
+		loadAbortControllerRef.current?.abort(
+			new DOMException("FASTQ loading was superseded.", "AbortError"),
+		);
+		const abortController = new AbortController();
+		loadAbortControllerRef.current = abortController;
+		const loadRequestId = ++loadRequestIdRef.current;
 		const requestedSourceConfigurationKey = sourceConfigurationKey;
+		const requestedMappingOptions = currentMappingOptionsRef.current;
 		const selectedFixture = fixtures.find(
 			(fixture) => fixture.id === selectedFixtureId,
 		);
 
 		if (!selectedFixture) {
+			if (loadAbortControllerRef.current === abortController) {
+				loadAbortControllerRef.current = null;
+			}
 			setBuildStatus("error");
 			setBuildError("The selected FASTQ fixture could not be found.");
+			setIsRandomizing(false);
 			return;
 		}
 
 		setBuildStatus("loading");
+		setIsRandomizing(false);
 		setBuildError(null);
 		setExportError(null);
 
@@ -600,12 +649,14 @@ export function useGenomicAudio(
 				await loadAndMapFastqFixture(
 					selectedFixture,
 					parseOptions,
-					currentMappingOptionsRef.current,
+					requestedMappingOptions,
+					{ signal: abortController.signal },
 				);
 
 			if (
+				loadRequestIdRef.current !== loadRequestId ||
 				currentSourceConfigurationKeyRef.current !==
-				requestedSourceConfigurationKey
+					requestedSourceConfigurationKey
 			) {
 				return;
 			}
@@ -618,8 +669,16 @@ export function useGenomicAudio(
 			setBuildStatus("ready");
 			setPlaybackSeconds(0);
 		} catch (error) {
+			if (loadRequestIdRef.current !== loadRequestId) {
+				return;
+			}
+
 			setBuildStatus("error");
 			setBuildError(stringifyUnknownError(error));
+		} finally {
+			if (loadAbortControllerRef.current === abortController) {
+				loadAbortControllerRef.current = null;
+			}
 		}
 	}, [
 		fixtures,
@@ -628,6 +687,163 @@ export function useGenomicAudio(
 		selectedFixtureId,
 		sourceConfigurationKey,
 	]);
+
+	const loadSettingsAndPlayLooping = useCallback(
+		async (settings: GenomicAudioSettings) => {
+			loadAbortControllerRef.current?.abort(
+				new DOMException("FASTQ loading was superseded.", "AbortError"),
+			);
+			const abortController = new AbortController();
+			loadAbortControllerRef.current = abortController;
+			const selectedFixture = fixtures.find(
+				(fixture) => fixture.id === settings.selectedFixtureId,
+			);
+			const loadRequestId = ++loadRequestIdRef.current;
+
+			if (!selectedFixture) {
+				loadAbortControllerRef.current = null;
+				setBuildStatus("error");
+				setBuildError("The selected FASTQ fixture could not be found.");
+				setIsRandomizing(false);
+				return;
+			}
+
+			// Invoke Tone.start() directly from the click call stack so browsers
+			// recognize the user gesture even though FASTQ loading happens next.
+			const audioStartPromise = Tone.start();
+			const nextParseOptions = { ...settings.parseOptions };
+			const nextMappingOptions = cloneMappingOptions(settings.mappingOptions);
+			const nextSourceConfigurationKey = getSourceConfigurationKey(
+				settings.selectedFixtureId,
+				nextParseOptions,
+			);
+			const nextMappingConfigurationKey = JSON.stringify(nextMappingOptions);
+			let sequenceWasLoaded = false;
+
+			stopVoicePreview();
+			exportAbortControllerRef.current?.abort();
+			disposeSignalChain();
+			resetTransport();
+
+			// Keep the change-detection effects synchronized with this atomic
+			// transition so they do not tear down the sequence we are about to load.
+			previousSourceConfigurationKeyRef.current = nextSourceConfigurationKey;
+			previousMappingConfigurationKeyRef.current = nextMappingConfigurationKey;
+			loadedSourceConfigurationKeyRef.current = null;
+			currentSourceConfigurationKeyRef.current = nextSourceConfigurationKey;
+			currentMappingOptionsRef.current = nextMappingOptions;
+
+			setSelectedFixtureId(settings.selectedFixtureId);
+			setParseOptions(nextParseOptions);
+			setMappingOptions(nextMappingOptions);
+			setIsLoopEnabled(true);
+			setVideoAspectRatio(settings.videoAspectRatio);
+			setVideoQuality(settings.videoQuality);
+			setDataset(null);
+			setSequence(null);
+			setPlaybackTriggerCount(0);
+			setPlaybackEventIndex(null);
+			setIsPreparingVoices(false);
+			setIsRandomizing(true);
+			setBuildStatus("loading");
+			setBuildError(null);
+			setExportStatus("idle");
+			setExportKind(null);
+			setExportStage(null);
+			setExportProgress(0);
+			setExportError(null);
+
+			try {
+				const [{ dataset: nextDataset, sequence: nextSequence }] =
+					await Promise.all([
+						loadAndMapFastqFixture(
+							selectedFixture,
+							nextParseOptions,
+							nextMappingOptions,
+							{ signal: abortController.signal },
+						),
+						audioStartPromise,
+					]);
+
+				if (loadRequestIdRef.current !== loadRequestId) {
+					return;
+				}
+
+				const context = Tone.getContext();
+				Tone.getDestination().mute = false;
+				Tone.getDestination().volume.value = 0;
+				setAudioContextState(context.state);
+
+				loadedSourceConfigurationKeyRef.current = nextSourceConfigurationKey;
+				setDataset(nextDataset);
+				setSequence(nextSequence);
+				setBuildStatus("ready");
+				setPlaybackSeconds(0);
+				sequenceWasLoaded = true;
+				setIsPreparingVoices(true);
+
+				const voices = await ensureSignalChain(
+					nextSequence.voiceSettings ?? DEFAULT_VOICE_SETTINGS,
+				);
+
+				if (loadRequestIdRef.current !== loadRequestId) {
+					return;
+				}
+
+				partRef.current = buildTonePart(
+					nextSequence,
+					voices,
+					(_event, eventIndex) => {
+						setPlaybackTriggerCount((current) => current + 1);
+						setPlaybackEventIndex(eventIndex);
+					},
+					() => {
+						setPlaybackSeconds(0);
+						setPlaybackEventIndex(null);
+						setAudioEnergy(0);
+						setIsPlaying(false);
+					},
+				);
+				partRef.current.setLoop(true);
+				partRef.current.play();
+				setIsPlaying(true);
+			} catch (error) {
+				if (
+					loadRequestIdRef.current !== loadRequestId ||
+					(error instanceof DOMException && error.name === "AbortError")
+				) {
+					return;
+				}
+
+				if (!sequenceWasLoaded) {
+					setBuildStatus("error");
+					setDataset(null);
+					setSequence(null);
+				}
+				setBuildError(
+					sequenceWasLoaded
+						? `Could not load the sampled instruments: ${stringifyUnknownError(error)}`
+						: stringifyUnknownError(error),
+				);
+				setIsPlaying(false);
+			} finally {
+				if (loadRequestIdRef.current === loadRequestId) {
+					setIsPreparingVoices(false);
+					setIsRandomizing(false);
+				}
+				if (loadAbortControllerRef.current === abortController) {
+					loadAbortControllerRef.current = null;
+				}
+			}
+		},
+		[
+			disposeSignalChain,
+			ensureSignalChain,
+			fixtures,
+			resetTransport,
+			stopVoicePreview,
+		],
+	);
 
 	useEffect(() => {
 		if (!shouldAutoLoadInitialFixtureRef.current) {
@@ -933,6 +1149,10 @@ export function useGenomicAudio(
 
 	useEffect(() => {
 		return () => {
+			loadRequestIdRef.current += 1;
+			loadAbortControllerRef.current?.abort(
+				new DOMException("FASTQ loading was cancelled.", "AbortError"),
+			);
 			exportAbortControllerRef.current?.abort();
 			stopVoicePreview();
 
@@ -977,11 +1197,13 @@ export function useGenomicAudio(
 		stopVoicePreview,
 		previewingBase,
 		isPreparingVoices,
+		isRandomizing,
 		buildStatus,
 		buildError,
 		dataset,
 		sequence,
 		loadSelectedFixture,
+		loadSettingsAndPlayLooping,
 		isLoopEnabled,
 		setIsLoopEnabled,
 		isPlaying,

@@ -64,6 +64,7 @@
 	pointer-events: auto;
 }
 
+.randomize-control,
 .share-settings-control {
 	width: fit-content;
 	align-self: flex-end;
@@ -73,6 +74,14 @@
 .audio-menu > button,
 .visual-layers-menu > button {
 	width: 100%;
+}
+
+.utility-controls {
+	display: flex;
+	width: 100%;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.75rem;
 }
 
 .scene-menu-panel,

@@ -22,8 +22,8 @@ function clampCount(value: number, fallback: number) {
 	return Math.max(1, Math.floor(value));
 }
 
-async function fetchTextPayload(url: string) {
-	const response = await fetch(url, { cache: "force-cache" });
+async function fetchTextPayload(url: string, signal?: AbortSignal) {
+	const response = await fetch(url, { cache: "force-cache", signal });
 
 	if (!response.ok) {
 		throw new Error(`Failed to fetch FASTQ asset: ${response.status}`);
@@ -102,11 +102,12 @@ export function parseFastqText(
 export async function loadFastqFixtureData(
 	fixture: FastqFixture,
 	options: FastqParseOptions,
+	signal?: AbortSignal,
 ): Promise<FastqDataset> {
 	const parseStart = performance.now();
 	const [r1Text, r2Text] = await Promise.all([
-		fetchTextPayload(fixture.r1Url),
-		fetchTextPayload(fixture.r2Url),
+		fetchTextPayload(fixture.r1Url, signal),
+		fetchTextPayload(fixture.r2Url, signal),
 	]);
 
 	const r1 = parseFastqText(r1Text, "r1", options);

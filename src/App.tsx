@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DicesIcon, Loader2Icon } from "lucide-react";
 import "./App.css";
+import { Button } from "./components/ui/button";
 import { AudioPanel } from "./components/AudioPanel";
 import { BackgroundMenu } from "./components/BackgroundMenu";
 import { ShareSettingsButton } from "./components/ShareSettingsButton";
@@ -32,6 +34,7 @@ import {
 	parseSharedSettings,
 	type SharedAppSettings,
 } from "./shared-settings";
+import { createRandomizedExperienceSettings } from "./random-settings";
 
 function drawCanvasFrame(
 	context: CanvasRenderingContext2D,
@@ -293,12 +296,27 @@ function App() {
 		() => buildSharedSettingsUrl(window.location.href, sharedSettings).href,
 		[sharedSettings],
 	);
+	const handleRandomize = useCallback(async () => {
+		const nextSettings = createRandomizedExperienceSettings(sharedSettings);
+
+		setBackgroundMode(nextSettings.backgroundMode);
+		setRoseAnglePreset(nextSettings.roseAnglePreset);
+		setRoseMaterialPreset(nextSettings.roseMaterialPreset);
+		setOverlayEffect(nextSettings.overlayEffect);
+		setStepwiseBackgroundEnabled(nextSettings.stepwiseBackgroundEnabled);
+		setBottomVisualizationEnabled(nextSettings.bottomVisualizationEnabled);
+		setBottomVisualizationMode(nextSettings.bottomVisualizationMode);
+		setVisualLayoutPreset(nextSettings.visualLayoutPreset);
+
+		await genomicAudio.loadSettingsAndPlayLooping(nextSettings.audio);
+	}, [genomicAudio, sharedSettings]);
 	useEffect(() => {
 		if (window.location.href !== shareUrl) {
 			window.history.replaceState(window.history.state, "", shareUrl);
 		}
 	}, [shareUrl]);
 	const isExporting = genomicAudio.exportStatus === "exporting";
+	const isRandomizeDisabled = isExporting;
 	const activeStepwiseLayoutPreset: VisualLayoutPreset =
 		stepwiseBackgroundEnabled && bottomVisualizationEnabled
 			? visualLayoutPreset
@@ -365,7 +383,28 @@ function App() {
 						visualLayoutPreset={visualLayoutPreset}
 					/>
 					<AudioPanel audio={genomicAudio} />
-					<ShareSettingsButton url={shareUrl} />
+					<div className="utility-controls">
+						<div className="randomize-control">
+							<Button
+								type="button"
+								variant="outline"
+								className="h-11 w-fit justify-between gap-3 rounded-full border-white/10 bg-black/55 px-5 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+								onClick={() => void handleRandomize()}
+								disabled={isRandomizeDisabled}
+								aria-busy={genomicAudio.isRandomizing}
+							>
+								<span>
+									{genomicAudio.isRandomizing ? "Randomizing..." : "Randomize"}
+								</span>
+								{genomicAudio.isRandomizing ? (
+									<Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+								) : (
+									<DicesIcon className="size-4" aria-hidden="true" />
+								)}
+							</Button>
+						</div>
+						<ShareSettingsButton url={shareUrl} />
+					</div>
 				</div>
 			</div>
 		</main>
