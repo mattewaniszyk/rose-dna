@@ -1,4 +1,4 @@
-import { ChevronDownIcon, OrbitIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, OrbitIcon } from "lucide-react";
 import {
 	BACKGROUND_MODE_LABELS,
 	BACKGROUND_OPTIONS,
@@ -20,15 +20,58 @@ import {
 	type RoseMaterialPreset,
 } from "./rose-material";
 import { Button } from "@/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuLabel,
-	DropdownMenuRadioGroup,
-	DropdownMenuRadioItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+type SceneOption = {
+	description: string;
+	label: string;
+	value: string;
+};
+
+type SceneOptionGroupProps = {
+	disabled: boolean;
+	label: string;
+	name: string;
+	onValueChange: (value: string) => void;
+	options: readonly SceneOption[];
+	value: string;
+};
+
+function SceneOptionGroup({
+	disabled,
+	label,
+	name,
+	onValueChange,
+	options,
+	value,
+}: SceneOptionGroupProps) {
+	return (
+		<fieldset className="scene-option-group" disabled={disabled}>
+			<legend className="scene-option-group-label">{label}</legend>
+			<div className="scene-option-group-items">
+				{options.map((option) => (
+					<label className="scene-option" key={option.value}>
+						<input
+							className="scene-option-input"
+							type="radio"
+							name={name}
+							value={option.value}
+							checked={option.value === value}
+							onChange={() => onValueChange(option.value)}
+						/>
+						<span className="scene-option-copy">
+							<span className="scene-option-label">{option.label}</span>
+							<span className="scene-option-description">
+								{option.description}
+							</span>
+						</span>
+						<CheckIcon className="scene-option-check" aria-hidden="true" />
+					</label>
+				))}
+			</div>
+		</fieldset>
+	);
+}
 
 type BackgroundMenuProps = {
 	disabled?: boolean;
@@ -68,8 +111,8 @@ export function BackgroundMenu({
 
 	return (
 		<div className="app-menu">
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
+			<Popover>
+				<PopoverTrigger asChild>
 					<Button
 						disabled={disabled}
 						variant="outline"
@@ -88,78 +131,44 @@ export function BackgroundMenu({
 						</span>
 						<ChevronDownIcon className="size-4 text-white/60 transition-transform duration-200 group-data-[state=open]:rotate-180" />
 					</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent
+				</PopoverTrigger>
+				<PopoverContent
 					align="end"
 					collisionPadding={12}
 					sideOffset={10}
 					className="scene-menu-panel rounded-3xl p-2"
 				>
-					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
-						Scene Background
-					</DropdownMenuLabel>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuRadioGroup
+					<SceneOptionGroup
+						disabled={disabled}
+						label="Scene Background"
+						name="scene-background"
+						options={BACKGROUND_OPTIONS}
 						value={backgroundMode}
 						onValueChange={(value) => {
 							if (!disabled) {
 								onBackgroundModeChange(value as BackgroundMode);
 							}
 						}}
-					>
-						{BACKGROUND_OPTIONS.map((option) => (
-							<DropdownMenuRadioItem
-								key={option.value}
-								value={option.value}
-								className="items-start rounded-2xl px-2 py-2.5 pr-9 focus:bg-white/8 focus:text-white"
-							>
-								<span className="flex flex-col gap-0.5">
-									<span className="text-sm font-medium text-white/92">
-										{option.label}
-									</span>
-									<span className="text-xs leading-relaxed text-white/55">
-										{option.description}
-									</span>
-								</span>
-							</DropdownMenuRadioItem>
-						))}
-					</DropdownMenuRadioGroup>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
-						Rose Angle
-					</DropdownMenuLabel>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuRadioGroup
+					/>
+					<div className="scene-option-separator" />
+					<SceneOptionGroup
+						disabled={disabled}
+						label="Rose Angle"
+						name="rose-angle"
+						options={ROSE_ANGLE_PRESET_OPTIONS}
 						value={roseAnglePreset}
 						onValueChange={(value) => {
 							if (!disabled) {
 								onRoseAnglePresetChange(value as RoseAnglePreset);
 							}
 						}}
-					>
-						{ROSE_ANGLE_PRESET_OPTIONS.map((option) => (
-							<DropdownMenuRadioItem
-								key={option.value}
-								value={option.value}
-								className="items-start rounded-2xl px-2 py-2.5 pr-9 focus:bg-white/8 focus:text-white"
-							>
-								<span className="flex flex-col gap-0.5">
-									<span className="text-sm font-medium text-white/92">
-										{option.label}
-									</span>
-									<span className="text-xs leading-relaxed text-white/55">
-										{option.description}
-									</span>
-								</span>
-							</DropdownMenuRadioItem>
-						))}
-					</DropdownMenuRadioGroup>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
-						Rose Material
-					</DropdownMenuLabel>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuRadioGroup
+					/>
+					<div className="scene-option-separator" />
+					<SceneOptionGroup
+						disabled={disabled}
+						label="Rose Material"
+						name="rose-material"
+						options={ROSE_MATERIAL_OPTIONS}
 						value={roseMaterialPreset}
 						onValueChange={(value) => {
 							if (!disabled) {
@@ -168,56 +177,22 @@ export function BackgroundMenu({
 								);
 							}
 						}}
-					>
-						{ROSE_MATERIAL_OPTIONS.map((option) => (
-							<DropdownMenuRadioItem
-								key={option.value}
-								value={option.value}
-								className="items-start rounded-2xl px-2 py-2.5 pr-9 focus:bg-white/8 focus:text-white"
-							>
-								<span className="flex flex-col gap-0.5">
-									<span className="text-sm font-medium text-white/92">
-										{option.label}
-									</span>
-									<span className="text-xs leading-relaxed text-white/55">
-										{option.description}
-									</span>
-								</span>
-							</DropdownMenuRadioItem>
-						))}
-					</DropdownMenuRadioGroup>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuLabel className="px-2 py-1.5 text-[0.68rem] uppercase tracking-[0.2em] text-white/55">
-						Overlay Effect
-					</DropdownMenuLabel>
-					<DropdownMenuSeparator className="mx-1 bg-white/10" />
-					<DropdownMenuRadioGroup
+					/>
+					<div className="scene-option-separator" />
+					<SceneOptionGroup
+						disabled={disabled}
+						label="Overlay Effect"
+						name="overlay-effect"
+						options={OVERLAY_EFFECT_OPTIONS}
 						value={overlayEffect}
 						onValueChange={(value) => {
 							if (!disabled) {
 								onOverlayEffectChange(value as OverlayEffect);
 							}
 						}}
-					>
-						{OVERLAY_EFFECT_OPTIONS.map((option) => (
-							<DropdownMenuRadioItem
-								key={option.value}
-								value={option.value}
-								className="items-start rounded-2xl px-2 py-2.5 pr-9 focus:bg-white/8 focus:text-white"
-							>
-								<span className="flex flex-col gap-0.5">
-									<span className="text-sm font-medium text-white/92">
-										{option.label}
-									</span>
-									<span className="text-xs leading-relaxed text-white/55">
-										{option.description}
-									</span>
-								</span>
-							</DropdownMenuRadioItem>
-						))}
-					</DropdownMenuRadioGroup>
-				</DropdownMenuContent>
-			</DropdownMenu>
+					/>
+				</PopoverContent>
+			</Popover>
 		</div>
 	);
 }
