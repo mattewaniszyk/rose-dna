@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DicesIcon, Loader2Icon, MenuIcon, XIcon } from "lucide-react";
+import {
+	DicesIcon,
+	Loader2Icon,
+	MenuIcon,
+	PauseIcon,
+	PlayIcon,
+	XIcon,
+} from "lucide-react";
 import "./App.css";
 import { Button } from "./components/ui/button";
 import { AudioPanel } from "./components/AudioPanel";
@@ -35,6 +42,95 @@ import {
 	type SharedAppSettings,
 } from "./shared-settings";
 import { createRandomizedExperienceSettings } from "./random-settings";
+
+const LOADING_COMMAND = "Run ROSE-DNA.exe //////// loading ";
+const LOADING_DOT_CYCLES = 5;
+const LOADING_DOT_TYPING_DELAY = 280;
+const LOADING_DOT_CYCLE_DURATION = 1_250;
+
+function AppLoadingOverlay() {
+	const [displayedText, setDisplayedText] = useState("");
+	const [isLeaving, setIsLeaving] = useState(false);
+	const [isVisible, setIsVisible] = useState(true);
+
+	useEffect(() => {
+		const timeouts: number[] = [];
+		const schedule = (callback: () => void, delay: number) => {
+			timeouts.push(window.setTimeout(callback, delay));
+		};
+		const prefersReducedMotion = window.matchMedia(
+			"(prefers-reduced-motion: reduce)",
+		).matches;
+		const characterDelay = prefersReducedMotion ? 0 : 52;
+
+		if (prefersReducedMotion) {
+			setDisplayedText(`${LOADING_COMMAND}...`);
+		} else {
+			Array.from(LOADING_COMMAND).forEach((_, index) => {
+				schedule(
+					() => setDisplayedText(LOADING_COMMAND.slice(0, index + 1)),
+					characterDelay * (index + 1),
+				);
+			});
+
+			const commandTypingDuration = characterDelay * LOADING_COMMAND.length;
+
+			for (let cycle = 0; cycle < LOADING_DOT_CYCLES; cycle += 1) {
+				const cycleStart =
+					commandTypingDuration + cycle * LOADING_DOT_CYCLE_DURATION;
+
+				for (let dotCount = 1; dotCount <= 3; dotCount += 1) {
+					schedule(
+						() =>
+							setDisplayedText(
+								`${LOADING_COMMAND}${".".repeat(dotCount)}`,
+							),
+						cycleStart + LOADING_DOT_TYPING_DELAY * dotCount,
+					);
+				}
+
+				if (cycle < LOADING_DOT_CYCLES - 1) {
+					schedule(
+						() => setDisplayedText(LOADING_COMMAND),
+						cycleStart + LOADING_DOT_CYCLE_DURATION,
+					);
+				}
+			}
+		}
+
+		const animationDuration = prefersReducedMotion
+			? 650
+			: characterDelay * LOADING_COMMAND.length +
+				LOADING_DOT_CYCLES * LOADING_DOT_CYCLE_DURATION +
+				300;
+		schedule(() => setIsLeaving(true), animationDuration);
+		schedule(() => setIsVisible(false), animationDuration + 500);
+
+		return () => {
+			timeouts.forEach((timeout) => window.clearTimeout(timeout));
+		};
+	}, []);
+
+	if (!isVisible) {
+		return null;
+	}
+
+	return (
+		<div
+			className={`app-loading-overlay${isLeaving ? " is-leaving" : ""}`}
+			role="status"
+			aria-live="polite"
+		>
+			<span className="app-loading-copy" aria-hidden="true">
+				{displayedText}
+				{displayedText.length < LOADING_COMMAND.length ? (
+					<span className="app-loading-cursor" />
+				) : null}
+			</span>
+			<span className="app-loading-accessible-copy">ROSE-DNA is loading.</span>
+		</div>
+	);
+}
 
 function drawCanvasFrame(
 	context: CanvasRenderingContext2D,
@@ -318,6 +414,14 @@ function App() {
 	}, [shareUrl]);
 	const isExporting = genomicAudio.exportStatus === "exporting";
 	const isRandomizeDisabled = isExporting;
+	const hasPlayableSequence = Boolean(genomicAudio.sequence?.events.length);
+	const isPlaybackLoading =
+		genomicAudio.buildStatus === "loading" || genomicAudio.isPreparingVoices;
+	const playbackLabel = isPlaybackLoading
+		? "Loading audio"
+		: genomicAudio.isPlaying
+			? "Pause audio"
+			: "Play audio";
 	const activeStepwiseLayoutPreset: VisualLayoutPreset =
 		stepwiseBackgroundEnabled && bottomVisualizationEnabled
 			? visualLayoutPreset
@@ -329,6 +433,7 @@ function App() {
 
 	return (
 		<main className="app-shell" data-background-mode={backgroundMode}>
+			<AppLoadingOverlay />
 			{unicornProjectId ? (
 				<UnicornBackground
 					key={backgroundMode}
@@ -361,6 +466,36 @@ function App() {
 			<div className="app-overlay">
 				<div className="app-control-stack">
 					<div className="utility-controls">
+						<div className="playback-control">
+							<Button
+								type="button"
+								variant="outline"
+								size="icon"
+								className="h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+								onClick={() =>
+									void (genomicAudio.isPlaying
+										? genomicAudio.pause()
+										: genomicAudio.play())
+								}
+								disabled={
+									!hasPlayableSequence || isPlaybackLoading || isExporting
+								}
+								aria-busy={isPlaybackLoading}
+								aria-label={playbackLabel}
+								title={playbackLabel}
+							>
+								{isPlaybackLoading ? (
+									<Loader2Icon
+										className="size-4 animate-spin"
+										aria-hidden="true"
+									/>
+								) : genomicAudio.isPlaying ? (
+									<PauseIcon className="size-4" aria-hidden="true" />
+								) : (
+									<PlayIcon className="size-4" aria-hidden="true" />
+								)}
+							</Button>
+						</div>
 						<div className="randomize-control">
 							<Button
 								type="button"

@@ -850,8 +850,15 @@ export function useGenomicAudio(
 			return;
 		}
 
-		shouldAutoLoadInitialFixtureRef.current = false;
-		void loadSelectedFixture();
+		// Defer the one-shot load until this effect survives React Strict Mode's
+		// development-only setup/cleanup replay. The discarded setup cancels its
+		// timer without consuming the flag, so the surviving setup can still load.
+		const timeout = window.setTimeout(() => {
+			shouldAutoLoadInitialFixtureRef.current = false;
+			void loadSelectedFixture();
+		}, 0);
+
+		return () => window.clearTimeout(timeout);
 	}, [loadSelectedFixture]);
 
 	const play = useCallback(async () => {

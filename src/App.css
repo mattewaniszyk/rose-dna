@@ -21,6 +21,74 @@
 	background: #000000;
 }
 
+.app-loading-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: grid;
+	place-items: center;
+	background: #020102;
+	color: rgba(255, 236, 244, 0.94);
+	opacity: 1;
+	transition: opacity 450ms cubic-bezier(0.22, 1, 0.36, 1);
+	cursor: wait;
+}
+
+.app-loading-overlay.is-leaving {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.app-loading-copy {
+	display: inline-flex;
+	align-items: center;
+	width: min(39ch, calc(100vw - 2rem));
+	font-family: "TypoPRO Fantasque Sans Mono", "SFMono-Regular", Consolas,
+		monospace;
+	font-size: clamp(0.68rem, 1.2vw, 0.78rem);
+	font-weight: 400;
+	letter-spacing: 0.09em;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.app-loading-cursor {
+	display: inline-block;
+	width: 0.52em;
+	height: 1.05em;
+	margin-left: 0.28em;
+	background: #f4adc8;
+	animation: app-loading-cursor-blink 720ms steps(1, end) infinite;
+}
+
+.app-loading-accessible-copy {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+@keyframes app-loading-cursor-blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.app-loading-overlay {
+		transition-duration: 150ms;
+	}
+
+	.app-loading-cursor {
+		animation: none;
+	}
+}
+
 .unicorn-background {
 	position: fixed;
 	inset: 0;
@@ -77,6 +145,7 @@
 	pointer-events: auto;
 }
 
+.playback-control,
 .randomize-control,
 .share-settings-control {
 	width: fit-content;
@@ -91,8 +160,11 @@
 
 .utility-controls {
 	display: flex;
-	width: 100%;
-	flex-wrap: wrap;
+	width: max-content;
+	max-width: calc(100vw - 2rem);
+	flex-wrap: nowrap;
+	align-items: center;
+	align-self: flex-end;
 	justify-content: flex-end;
 	gap: 0.5rem;
 	pointer-events: auto;
