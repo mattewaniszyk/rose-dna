@@ -206,14 +206,26 @@ export function createWavPcm16(
 	return new Uint8Array(buffer);
 }
 
-export async function renderSequenceAudio(
+export function createWavFromAudioBuffer(
+	audioBuffer: AudioBuffer,
+	channels: 1 | 2 = 2,
+) {
+	return createWavPcm16(
+		channels === 2
+			? [audioBuffer.getChannelData(0), audioBuffer.getChannelData(1)]
+			: [audioBuffer.getChannelData(0)],
+		audioBuffer.sampleRate,
+	);
+}
+
+export async function renderSequenceAudioBuffer(
 	sequence: GenomicMusicSequence,
 	options: {
 		channels?: 1 | 2;
 		sampleRate?: number;
 		signal?: AbortSignal;
 	},
-): Promise<RenderedSequenceAudio> {
+): Promise<AudioBuffer> {
 	const channels = options.channels ?? 2;
 	const sampleRate = options.sampleRate ?? 44_100;
 	const renderPromise = renderSampledSequence(sequence, {
@@ -232,14 +244,22 @@ export async function renderSequenceAudio(
 	);
 
 	throwIfAborted(options.signal);
+	return rendered;
+}
+
+export async function renderSequenceAudio(
+	sequence: GenomicMusicSequence,
+	options: {
+		channels?: 1 | 2;
+		sampleRate?: number;
+		signal?: AbortSignal;
+	},
+): Promise<RenderedSequenceAudio> {
+	const channels = options.channels ?? 2;
+	const audioBuffer = await renderSequenceAudioBuffer(sequence, options);
 
 	return {
-		audioBuffer: rendered,
-		wavData: createWavPcm16(
-			channels === 2
-				? [rendered.getChannelData(0), rendered.getChannelData(1)]
-				: [rendered.getChannelData(0)],
-			sampleRate,
-		),
+		audioBuffer,
+		wavData: createWavFromAudioBuffer(audioBuffer, channels),
 	};
 }

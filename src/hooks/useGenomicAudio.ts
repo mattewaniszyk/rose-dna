@@ -997,6 +997,10 @@ export function useGenomicAudio(
 			return;
 		}
 
+		// Resume Web Audio from the export click's user-activation stack. Native
+		// MP4 recording uses this context to mux the rendered sequence as AAC.
+		const audioStartPromise = Tone.start();
+
 		stopVoicePreview();
 		partRef.current?.stop();
 		setPlaybackSeconds(0);
@@ -1023,11 +1027,22 @@ export function useGenomicAudio(
 		setExportProgress(0);
 
 		try {
+			await audioStartPromise;
+			const rawAudioContext = Tone.getContext().rawContext;
+
+			if (
+				!("createMediaStreamDestination" in rawAudioContext) ||
+				typeof rawAudioContext.createMediaStreamDestination !== "function"
+			) {
+				throw new Error("This browser cannot capture the rendered MP4 audio.");
+			}
+
 			const { exportSequenceToMp4 } = await import("@/audio/export-mp4");
 			hasLoadedEncoderRef.current = true;
 			const blob = await exportSequenceToMp4(sequence, {
 				aspectRatio: videoAspectRatio,
 				quality: videoQuality,
+				audioContext: rawAudioContext,
 				signal: abortController.signal,
 				prepareScene: videoExportBridge.prepareScene,
 				onProgress: (progress) => {

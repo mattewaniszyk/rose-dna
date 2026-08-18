@@ -1,8 +1,9 @@
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import {
 	clamp,
+	createWavFromAudioBuffer,
 	getMediaEncoder,
-	renderSequenceAudio,
+	renderSequenceAudioBuffer,
 	resetMediaEncoder,
 	stringifyUnknownError,
 	throwIfAborted,
@@ -23,8 +24,8 @@ import {
 const VIDEO_FRAME_RATE = 30;
 const PROGRESS_UPDATE_INTERVAL_FRAMES = 6;
 const VIDEO_MIME_TYPES = [
-	"video/mp4;codecs=avc1.42E01E",
 	"video/mp4",
+	"video/mp4;codecs=avc1.42E01E",
 	"video/webm;codecs=vp9",
 	"video/webm;codecs=vp8",
 ] as const;
@@ -34,6 +35,7 @@ export type Mp4ExportProgress = MediaExportProgress;
 type Mp4ExportOptions = {
 	aspectRatio?: VideoAspectRatio;
 	quality?: VideoQualityPreset;
+	audioContext?: AudioContext;
 	signal?: AbortSignal;
 	onProgress?: (progress: Mp4ExportProgress) => void;
 	prepareScene: (
@@ -45,6 +47,9 @@ type Mp4ExportOptions = {
 type RecordCanvasOptions = {
 	durationSeconds: number;
 	energyEnvelope: Float32Array;
+	mimeType?: string;
+	audioBuffer?: AudioBuffer;
+	audioContext?: AudioContext;
 	recordingBitRate?: number;
 	signal?: AbortSignal;
 	onProgress?: (progress: number) => void;
@@ -53,6 +58,10 @@ type RecordCanvasOptions = {
 type ManualCanvasCaptureTrack = MediaStreamTrack & {
 	requestFrame?: () => void;
 };
+
+function isNativeMp4MimeType(mimeType: string) {
+	return mimeType.toLowerCase().startsWith("video/mp4");
+}
 
 export function getSupportedVideoMimeType() {
 	if (
@@ -131,7 +140,7 @@ export async function recordCanvas(
 	session: Pick<VideoCaptureSession, "canvas" | "renderFrame">,
 	options: RecordCanvasOptions,
 ) {
-	const mimeType = getSupportedVideoMimeType();
+	const mimeType = options.mimeType ?? getSupportedVideoMimeType();
 	const { canvas } = session;
 
 	if (!mimeType || typeof canvas.captureStream !== "function") {
@@ -183,6 +192,9 @@ export async function recordCanvas(
 			| undefined;
 		const chunks: Blob[] = [];
 		let recorder: MediaRecorder;
+		let audioSource: AudioBufferSourceNode | null = null;
+		let audioSourceStarted = false;
+		let audioSourceStopped = false;
 
 		if (!videoTrack) {
 			for (const track of stream.getTracks()) {
@@ -193,6 +205,44 @@ export async function recordCanvas(
 				new Error("The browser did not provide a canvas video track."),
 			);
 			return;
+		}
+
+		if (isNativeMp4MimeType(mimeType)) {
+			if (!options.audioBuffer || !options.audioContext) {
+				for (const track of stream.getTracks()) {
+					track.stop();
+				}
+
+				reject(new Error("Native MP4 capture requires rendered audio."));
+				return;
+			}
+
+			try {
+				const audioDestination =
+					options.audioContext.createMediaStreamDestination();
+				const audioTrack = audioDestination.stream.getAudioTracks()[0];
+
+				if (!audioTrack) {
+					throw new Error("The browser did not provide an audio capture track.");
+				}
+
+				audioSource = options.audioContext.createBufferSource();
+				audioSource.buffer = options.audioBuffer;
+				audioSource.connect(audioDestination);
+				stream.addTrack(audioTrack);
+			} catch (error) {
+				for (const track of stream.getTracks()) {
+					track.stop();
+				}
+				audioSource?.disconnect();
+
+				reject(
+					error instanceof Error
+						? error
+						: new Error("The browser could not prepare MP4 audio capture."),
+				);
+				return;
+			}
 		}
 
 		try {
@@ -206,6 +256,7 @@ export async function recordCanvas(
 			for (const track of stream.getTracks()) {
 				track.stop();
 			}
+			audioSource?.disconnect();
 
 			reject(error);
 			return;
@@ -214,6 +265,19 @@ export async function recordCanvas(
 		let finishFrameWait: (() => void) | null = null;
 		let settled = false;
 		let terminalError: Error | null = null;
+		const stopAudioSource = () => {
+			if (audioSource && audioSourceStarted && !audioSourceStopped) {
+				audioSourceStopped = true;
+
+				try {
+					audioSource.stop();
+				} catch {
+					// The source may already have ended at the requested duration.
+				}
+			}
+
+			audioSource?.disconnect();
+		};
 
 		const cleanup = () => {
 			window.clearTimeout(frameTimer);
@@ -221,6 +285,7 @@ export async function recordCanvas(
 			finishFrameWait = null;
 			options.signal?.removeEventListener("abort", onAbort);
 			document.removeEventListener("visibilitychange", onVisibilityChange);
+			stopAudioSource();
 			for (const track of stream.getTracks()) {
 				track.stop();
 			}
@@ -339,6 +404,20 @@ export async function recordCanvas(
 			settleWithError(new Error("The browser could not record the scene."));
 		});
 		recorder.addEventListener("start", () => {
+			try {
+				if (audioSource) {
+					audioSource.start();
+					audioSourceStarted = true;
+				}
+			} catch (error) {
+				settleWithError(
+					error instanceof Error
+						? error
+						: new Error("The browser could not start MP4 audio capture."),
+				);
+				return;
+			}
+
 			void captureFrames();
 		});
 		recorder.addEventListener("stop", () => {
@@ -393,7 +472,13 @@ export async function exportSequenceToMp4(
 	sequence: GenomicMusicSequence,
 	options: Mp4ExportOptions,
 ) {
-	if (!isMp4ExportSupported()) {
+	const mimeType = getSupportedVideoMimeType();
+
+	if (
+		!mimeType ||
+		typeof HTMLCanvasElement === "undefined" ||
+		typeof HTMLCanvasElement.prototype.captureStream !== "function"
+	) {
 		throw new Error(
 			"This browser does not support MP4 scene capture.",
 		);
@@ -401,6 +486,7 @@ export async function exportSequenceToMp4(
 
 	let ffmpeg: FFmpeg | null = null;
 	let captureSession: VideoCaptureSession | null = null;
+	const recordingIsMp4 = isNativeMp4MimeType(mimeType);
 	const aspectRatio = options.aspectRatio ?? DEFAULT_VIDEO_ASPECT_RATIO;
 	const output = VIDEO_ASPECT_RATIO_CONFIGS[aspectRatio];
 	const quality =
@@ -410,7 +496,7 @@ export async function exportSequenceToMp4(
 
 	try {
 		options.onProgress?.({ stage: "rendering-audio", progress: 0 });
-		const { audioBuffer, wavData } = await renderSequenceAudio(sequence, {
+		const audioBuffer = await renderSequenceAudioBuffer(sequence, {
 			channels: 2,
 			sampleRate: 44_100,
 			signal: options.signal,
@@ -436,6 +522,9 @@ export async function exportSequenceToMp4(
 		const recording = await recordCanvas(captureSession, {
 			durationSeconds: sequence.runtimeSeconds,
 			energyEnvelope,
+			mimeType,
+			audioBuffer: recordingIsMp4 ? audioBuffer : undefined,
+			audioContext: recordingIsMp4 ? options.audioContext : undefined,
 			recordingBitRate: quality.recordingBitRate,
 			signal: options.signal,
 			onProgress: (progress) =>
@@ -446,15 +535,28 @@ export async function exportSequenceToMp4(
 		captureSession = null;
 		throwIfAborted(options.signal, "MP4 export was cancelled.");
 
+		if (recordingIsMp4) {
+			const header = new Uint8Array(
+				await recording.slice(0, 12).arrayBuffer(),
+			);
+
+			if (!looksLikeMp4(header)) {
+				throw new Error("The browser returned an invalid or empty MP4 file.");
+			}
+
+			throwIfAborted(options.signal, "MP4 export was cancelled.");
+			return recording;
+		}
+
 		options.onProgress?.({ stage: "loading-encoder", progress: 0 });
 		ffmpeg = await getMediaEncoder(options.signal);
 		options.onProgress?.({ stage: "loading-encoder", progress: 1 });
 
 		const id = crypto.randomUUID();
-		const recordingIsMp4 = recording.type.toLowerCase().startsWith("video/mp4");
-		const videoName = `video-${id}.${recordingIsMp4 ? "mp4" : "webm"}`;
+		const videoName = `video-${id}.webm`;
 		const audioName = `audio-${id}.wav`;
 		const mp4Name = `output-${id}.mp4`;
+		const wavData = createWavFromAudioBuffer(audioBuffer, 2);
 		const ffmpegLogs: string[] = [];
 		const onLog = ({ message }: { message: string }) => {
 			ffmpegLogs.push(message);
@@ -494,20 +596,6 @@ export async function exportSequenceToMp4(
 				// keep the video stream alive through the requested audio runtime.
 				`tpad=stop_mode=clone:stop_duration=${duration}`,
 			].join(",");
-			const videoEncodingArgs = recordingIsMp4
-				? ["-c:v", "copy"]
-				: [
-						"-vf",
-						videoFilter,
-						"-c:v",
-						"libx264",
-						"-preset",
-						quality.x264Preset,
-						"-crf",
-						String(quality.crf),
-						"-pix_fmt",
-						"yuv420p",
-					];
 			const resultCode = await ffmpeg.exec(
 				[
 					"-i",
@@ -518,7 +606,16 @@ export async function exportSequenceToMp4(
 					"0:v:0",
 					"-map",
 					"1:a:0",
-					...videoEncodingArgs,
+					"-vf",
+					videoFilter,
+					"-c:v",
+					"libx264",
+					"-preset",
+					quality.x264Preset,
+					"-crf",
+					String(quality.crf),
+					"-pix_fmt",
+					"yuv420p",
 					"-aspect",
 					aspectRatio,
 					"-c:a",

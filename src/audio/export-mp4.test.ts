@@ -4,13 +4,21 @@ import { DEFAULT_VOICE_SETTINGS, type GenomicMusicSequence } from "./types";
 const mockState = vi.hoisted(() => ({
 	commands: [] as string[][],
 	timeouts: [] as number[],
+	encoderLoads: 0,
+	writtenFiles: [] as string[],
 	deletedFiles: [] as string[],
 	invalidOutputCount: 0,
 	recorders: [] as Array<{ state: string; stop: () => void }>,
 	recorderOptions: [] as Array<{ videoBitsPerSecond?: number }>,
+	recorderStreams: [] as MockMediaStream[],
 	captureFrameRates: [] as number[],
 	trackStop: vi.fn(),
 	trackRequestFrame: vi.fn(),
+	audioTrackStop: vi.fn(),
+	audioSourceStart: vi.fn(),
+	audioSourceStop: vi.fn(),
+	audioSourceConnect: vi.fn(),
+	audioSourceDisconnect: vi.fn(),
 	supportedMimeTypes: new Set<string>(),
 }));
 
@@ -19,6 +27,7 @@ vi.mock("@ffmpeg/ffmpeg", () => ({
 		private listeners = new Map<string, Set<(event: never) => void>>();
 
 		async load() {
+			mockState.encoderLoads += 1;
 			return true;
 		}
 
@@ -32,7 +41,8 @@ vi.mock("@ffmpeg/ffmpeg", () => ({
 			this.listeners.get(name)?.delete(callback);
 		}
 
-		async writeFile() {
+		async writeFile(fileName: string) {
+			mockState.writtenFiles.push(fileName);
 			return true;
 		}
 
@@ -91,12 +101,16 @@ class MockMediaRecorder {
 	private listeners = new Map<string, Set<(event: { data: Blob }) => void>>();
 
 	constructor(
-		_stream: unknown,
-		options: { videoBitsPerSecond?: number },
+		stream: MockMediaStream,
+		options: { mimeType?: string; videoBitsPerSecond?: number },
 	) {
 		mockState.recorders.push(this);
 		mockState.recorderOptions.push(options);
+		mockState.recorderStreams.push(stream);
+		this.mimeType = options.mimeType ?? "";
 	}
+
+	private mimeType: string;
 
 	addEventListener(
 		name: string,
@@ -123,13 +137,89 @@ class MockMediaRecorder {
 		this.state = "inactive";
 
 		for (const callback of this.listeners.get("dataavailable") ?? []) {
-			callback({ data: new Blob([new Uint8Array([1, 2, 3])]) });
+			const shouldReturnInvalidMp4 =
+				this.mimeType.startsWith("video/mp4") &&
+				mockState.invalidOutputCount > 0;
+			if (shouldReturnInvalidMp4) {
+				mockState.invalidOutputCount -= 1;
+			}
+			const bytes =
+				this.mimeType.startsWith("video/mp4") && !shouldReturnInvalidMp4
+					? (() => {
+							const mp4 = new Uint8Array(512);
+							mp4.set([
+								0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f,
+								0x6d,
+							]);
+							return mp4;
+						})()
+					: new Uint8Array([1, 2, 3]);
+			callback({ data: new Blob([bytes]) });
 		}
 
 		for (const callback of this.listeners.get("stop") ?? []) {
 			callback({ data: new Blob() });
 		}
 	}
+
+	emitError() {
+		for (const callback of this.listeners.get("error") ?? []) {
+			callback({ data: new Blob() });
+		}
+	}
+}
+
+class MockMediaStream {
+	private tracks: Array<{ stop: () => void; requestFrame?: () => void }>;
+
+	constructor(videoTrack?: { stop: () => void; requestFrame?: () => void }) {
+		this.tracks = videoTrack ? [videoTrack] : [];
+	}
+
+	addTrack(track: { stop: () => void }) {
+		this.tracks.push(track);
+	}
+
+	getTracks() {
+		return this.tracks;
+	}
+
+	getVideoTracks() {
+		return this.tracks.filter((track) => "requestFrame" in track);
+	}
+
+	getAudioTracks() {
+		return this.tracks.filter((track) => !("requestFrame" in track));
+	}
+}
+
+function createMockAudioContext() {
+	return {
+		createBufferSource: vi.fn(() => ({
+			buffer: null,
+			connect: mockState.audioSourceConnect,
+			disconnect: mockState.audioSourceDisconnect,
+			start: mockState.audioSourceStart,
+			stop: mockState.audioSourceStop,
+		})),
+		createMediaStreamDestination: vi.fn(() => ({
+			stream: {
+				getAudioTracks: () => [{ stop: mockState.audioTrackStop }],
+			},
+		})),
+	} as unknown as AudioContext;
+}
+
+function createMockAudioBuffer(): AudioBuffer {
+	const samples = new Float32Array(4_410);
+
+	return {
+		duration: 0.1,
+		length: samples.length,
+		numberOfChannels: 2,
+		sampleRate: 44_100,
+		getChannelData: () => samples,
+	} as unknown as AudioBuffer;
 }
 
 class MockCanvas {
@@ -143,10 +233,7 @@ class MockCanvas {
 			requestFrame: mockState.trackRequestFrame,
 		};
 
-		return {
-			getTracks: () => [track],
-			getVideoTracks: () => [track],
-		};
+		return new MockMediaStream(track) as unknown as MediaStream;
 	}
 }
 
@@ -160,9 +247,13 @@ class MockAutomaticCanvas {
 			stop: mockState.trackStop,
 		};
 
+		const stream = new MockMediaStream();
+		stream.addTrack(track);
 		return {
-			getTracks: () => [track],
+			addTrack: stream.addTrack.bind(stream),
+			getTracks: stream.getTracks.bind(stream),
 			getVideoTracks: () => [track],
+			getAudioTracks: stream.getAudioTracks.bind(stream),
 		};
 	}
 }
@@ -232,13 +323,21 @@ describe("MP4 export", () => {
 		});
 		mockState.commands.length = 0;
 		mockState.timeouts.length = 0;
+		mockState.encoderLoads = 0;
+		mockState.writtenFiles.length = 0;
 		mockState.deletedFiles.length = 0;
 		mockState.invalidOutputCount = 0;
 		mockState.recorders.length = 0;
 		mockState.recorderOptions.length = 0;
+		mockState.recorderStreams.length = 0;
 		mockState.captureFrameRates.length = 0;
 		mockState.trackStop.mockClear();
 		mockState.trackRequestFrame.mockClear();
+		mockState.audioTrackStop.mockClear();
+		mockState.audioSourceStart.mockClear();
+		mockState.audioSourceStop.mockClear();
+		mockState.audioSourceConnect.mockClear();
+		mockState.audioSourceDisconnect.mockClear();
 		mockState.supportedMimeTypes.clear();
 		mockState.supportedMimeTypes.add("video/webm;codecs=vp9");
 		resetMediaEncoder();
@@ -253,6 +352,9 @@ describe("MP4 export", () => {
 	it("detects the preferred recording codec and browser support", () => {
 		expect(getSupportedVideoMimeType()).toBe("video/webm;codecs=vp9");
 		expect(isMp4ExportSupported()).toBe(true);
+
+		mockState.supportedMimeTypes.add("video/mp4");
+		expect(getSupportedVideoMimeType()).toBe("video/mp4");
 	});
 
 	it("builds a smoothed energy envelope and keeps silence at zero", () => {
@@ -429,6 +531,77 @@ describe("MP4 export", () => {
 		expect(mockState.trackStop).toHaveBeenCalledOnce();
 	});
 
+	it("stops native MP4 audio nodes and tracks when cancelled", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		const controller = new AbortController();
+		const promise = recordCanvas(createCaptureSession(), {
+			durationSeconds: 1,
+			energyEnvelope: new Float32Array([0.5]),
+			audioBuffer: createMockAudioBuffer(),
+			audioContext: createMockAudioContext(),
+			signal: controller.signal,
+		});
+		const expectation = expect(promise).rejects.toThrow("cancelled");
+
+		controller.abort(new DOMException("cancelled", "AbortError"));
+		await expectation;
+
+		expect(mockState.audioSourceStart).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceStop).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceDisconnect).toHaveBeenCalledOnce();
+		expect(mockState.audioTrackStop).toHaveBeenCalledOnce();
+	});
+
+	it("cleans native MP4 audio when the recorder errors", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		const promise = recordCanvas(createCaptureSession(), {
+			durationSeconds: 1,
+			energyEnvelope: new Float32Array([0.5]),
+			audioBuffer: createMockAudioBuffer(),
+			audioContext: createMockAudioContext(),
+		});
+		const expectation = expect(promise).rejects.toThrow(
+			"could not record the scene",
+		);
+
+		(mockState.recorders[0] as MockMediaRecorder).emitError();
+		await expectation;
+
+		expect(mockState.audioSourceStop).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceDisconnect).toHaveBeenCalledOnce();
+		expect(mockState.audioTrackStop).toHaveBeenCalledOnce();
+	});
+
+	it("cleans native MP4 audio when the document becomes hidden", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		const promise = recordCanvas(createCaptureSession(), {
+			durationSeconds: 1,
+			energyEnvelope: new Float32Array([0.5]),
+			audioBuffer: createMockAudioBuffer(),
+			audioContext: createMockAudioContext(),
+		});
+		const expectation = expect(promise).rejects.toThrow("tab was hidden");
+		const visibilityListener = vi
+			.mocked(document.addEventListener)
+			.mock.calls.find(([name]) => name === "visibilitychange")?.[1] as
+			| EventListener
+			| undefined;
+
+		Object.defineProperty(document, "hidden", {
+			configurable: true,
+			value: true,
+		});
+		visibilityListener?.(new Event("visibilitychange"));
+		await expectation;
+
+		expect(mockState.audioSourceStop).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceDisconnect).toHaveBeenCalledOnce();
+		expect(mockState.audioTrackStop).toHaveBeenCalledOnce();
+	});
+
 	it("creates a validated 1080p H.264/AAC MP4 and cleans temporary files", async () => {
 		const stages: string[] = [];
 		const releaseScene = vi.fn();
@@ -506,24 +679,47 @@ describe("MP4 export", () => {
 		);
 	});
 
-	it("accepts Safari MP4 capture and remuxes its H.264 video without transcoding", async () => {
+	it("returns native Safari MP4 with Web Audio without loading FFmpeg", async () => {
 		mockState.supportedMimeTypes.clear();
 		mockState.supportedMimeTypes.add("video/mp4");
 		expect(getSupportedVideoMimeType()).toBe("video/mp4");
+		const stages: string[] = [];
+		const arrayBufferSizes: number[] = [];
+		const originalArrayBuffer = Blob.prototype.arrayBuffer;
+		const arrayBufferSpy = vi
+			.spyOn(Blob.prototype, "arrayBuffer")
+			.mockImplementation(function (this: Blob) {
+				arrayBufferSizes.push(this.size);
+				return originalArrayBuffer.call(this);
+			});
 
 		const promise = exportSequenceToMp4(sequence, {
+			audioContext: createMockAudioContext(),
+			quality: "near-lossless",
 			prepareScene: vi.fn(async () => createCaptureSession()),
+			onProgress: ({ stage }) => stages.push(stage),
 		});
 
 		await vi.advanceTimersByTimeAsync(40);
-		await promise;
+		const blob = await promise;
+		arrayBufferSpy.mockRestore();
 
-		const command = mockState.commands[0] ?? [];
-		const videoInput = command[command.indexOf("-i") + 1] ?? "";
-		expect(videoInput).toMatch(/^video-.*\.mp4$/u);
-		expect(command[command.indexOf("-c:v") + 1]).toBe("copy");
-		expect(command).not.toContain("libx264");
-		expect(command).not.toContain("-vf");
+		expect(blob.type).toBe("video/mp4");
+		expect(blob.size).toBe(512);
+		expect(arrayBufferSizes).toEqual([12]);
+		expect(mockState.recorderStreams[0]?.getTracks()).toHaveLength(2);
+		expect(mockState.audioSourceConnect).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceStart).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceStop).toHaveBeenCalledOnce();
+		expect(mockState.audioSourceDisconnect).toHaveBeenCalledOnce();
+		expect(mockState.audioTrackStop).toHaveBeenCalledOnce();
+		expect(mockState.recorderOptions[0]?.videoBitsPerSecond).toBe(80_000_000);
+		expect(mockState.encoderLoads).toBe(0);
+		expect(mockState.writtenFiles).toEqual([]);
+		expect(mockState.commands).toEqual([]);
+		expect(mockState.deletedFiles).toEqual([]);
+		expect(stages).not.toContain("loading-encoder");
+		expect(stages).not.toContain("encoding-mp4");
 	});
 
 	it("rejects unsupported capture and honors pre-recording cancellation", async () => {
@@ -550,7 +746,30 @@ describe("MP4 export", () => {
 		).rejects.toThrow("cancelled");
 	});
 
-	it("rejects invalid MP4 output and allows a clean retry", async () => {
+	it("rejects invalid native MP4 output and allows a clean retry", async () => {
+		mockState.supportedMimeTypes.clear();
+		mockState.supportedMimeTypes.add("video/mp4");
+		mockState.invalidOutputCount = 1;
+		const options = {
+			audioContext: createMockAudioContext(),
+			prepareScene: vi.fn(async () => createCaptureSession()),
+		};
+
+		const first = exportSequenceToMp4(sequence, options);
+		const firstExpectation = expect(first).rejects.toThrow(
+			"invalid or empty MP4",
+		);
+		await vi.advanceTimersByTimeAsync(40);
+		await firstExpectation;
+
+		const second = exportSequenceToMp4(sequence, options);
+		await vi.advanceTimersByTimeAsync(40);
+		await expect(second).resolves.toBeInstanceOf(Blob);
+		expect(mockState.encoderLoads).toBe(0);
+		expect(mockState.commands).toEqual([]);
+	});
+
+	it("rejects invalid FFmpeg MP4 output and allows a clean retry", async () => {
 		mockState.invalidOutputCount = 1;
 		const options = {
 			prepareScene: vi.fn(async () => createCaptureSession()),
