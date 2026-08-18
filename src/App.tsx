@@ -10,6 +10,7 @@ import {
 import "./App.css";
 import { Button } from "./components/ui/button";
 import { AudioPanel } from "./components/AudioPanel";
+import { ArtistStatement } from "./components/ArtistStatement";
 import { BackgroundMenu } from "./components/BackgroundMenu";
 import { ShareSettingsButton } from "./components/ShareSettingsButton";
 import { VisualLayersMenu } from "./components/VisualLayersMenu";
@@ -259,6 +260,7 @@ function App() {
 			initialSharedSettings.settings.visualLayoutPreset,
 		);
 	const [controlsExpanded, setControlsExpanded] = useState(false);
+	const [artistStatementOpen, setArtistStatementOpen] = useState(false);
 	const unicornProjectId = BACKGROUND_MODE_PROJECT_IDS[backgroundMode];
 	const sceneCaptureControllerRef =
 		useRef<RoseSceneCaptureController | null>(null);
@@ -407,6 +409,13 @@ function App() {
 
 		await genomicAudio.loadSettingsAndPlayLooping(nextSettings.audio);
 	}, [genomicAudio, sharedSettings]);
+	const handleArtistStatementOpenChange = useCallback((isOpen: boolean) => {
+		setArtistStatementOpen(isOpen);
+
+		if (isOpen) {
+			setControlsExpanded(false);
+		}
+	}, []);
 	useEffect(() => {
 		if (window.location.href !== shareUrl) {
 			window.history.replaceState(window.history.state, "", shareUrl);
@@ -434,6 +443,10 @@ function App() {
 	return (
 		<main className="app-shell" data-background-mode={backgroundMode}>
 			<AppLoadingOverlay />
+			<ArtistStatement
+				isOpen={artistStatementOpen}
+				onOpenChange={handleArtistStatementOpenChange}
+			/>
 			{unicornProjectId ? (
 				<UnicornBackground
 					key={backgroundMode}
@@ -463,8 +476,9 @@ function App() {
 				stepwiseLayoutPreset={activeStepwiseLayoutPreset}
 				visualizationLayoutPreset={activeVisualizationLayoutPreset}
 			/>
-			<div className="app-overlay">
-				<div className="app-control-stack">
+			{!artistStatementOpen ? (
+				<div className="app-overlay">
+					<div className="app-control-stack">
 					<div className="utility-controls">
 						<div className="playback-control">
 							<Button
@@ -568,8 +582,9 @@ function App() {
 							</>
 						) : null}
 					</div>
+					</div>
 				</div>
-			</div>
+			) : null}
 		</main>
 	);
 }

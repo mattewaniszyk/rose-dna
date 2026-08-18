@@ -1,4 +1,5 @@
 .app-shell {
+	--app-control-top-offset: max(1rem, env(safe-area-inset-top));
 	position: relative;
 	min-height: 100svh;
 	overflow: hidden;
@@ -102,6 +103,121 @@
 	height: 100%;
 }
 
+.artist-statement-toggle {
+	position: fixed;
+	top: var(--app-control-top-offset);
+	left: max(1rem, env(safe-area-inset-left));
+	z-index: 31;
+}
+
+.artist-statement-toggle[aria-expanded="true"] {
+	background: rgba(255, 255, 255, 0.12);
+}
+
+.artist-statement-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 30;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	background: rgba(0, 0, 0, 0.72);
+	color: rgba(255, 255, 255, 0.92);
+	-webkit-backdrop-filter: blur(16px);
+	backdrop-filter: blur(16px);
+	animation: artist-statement-fade-in 180ms ease-out;
+}
+
+.artist-statement-content {
+	width: 100%;
+	max-width: 112rem;
+	padding:
+		max(5.25rem, calc(env(safe-area-inset-top) + 4.25rem))
+		max(2rem, env(safe-area-inset-right))
+		max(3rem, env(safe-area-inset-bottom))
+		max(2rem, env(safe-area-inset-left));
+	font-size: clamp(1rem, 1.15vw, 1.4rem);
+	line-height: 1.48;
+}
+
+.artist-statement-content h1,
+.artist-statement-content h2,
+.artist-statement-content h3 {
+	margin: 0;
+	color: rgba(255, 255, 255, 0.96);
+	font: inherit;
+	font-weight: 400;
+}
+
+.artist-statement-content h1 {
+	margin-bottom: clamp(2.6rem, 5vw, 5.25rem);
+	font-size: clamp(1rem, 1.2vw, 1.45rem);
+	letter-spacing: 0.025em;
+}
+
+.artist-statement-accessible-title,
+.artist-statement-accessible-copy {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.artist-statement-typing-copy {
+	min-height: 1.48em;
+	white-space: pre-wrap;
+}
+
+.artist-statement-cursor {
+	display: inline-block;
+	width: 0.52em;
+	height: 1.05em;
+	margin-left: 0.28em;
+	background: #f4adc8;
+	animation: app-loading-cursor-blink 720ms steps(1, end) infinite;
+}
+
+@keyframes artist-statement-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+
+.artist-statement-content p {
+	margin: 0 0 clamp(2.25rem, 4vw, 4.25rem);
+}
+
+.artist-statement-content h2,
+.artist-statement-content h3 {
+	margin-bottom: clamp(1.6rem, 3vw, 3rem);
+}
+
+.artist-statement-content section p:last-child {
+	margin-bottom: clamp(2.25rem, 4vw, 4.25rem);
+}
+
+.artist-statement-content a {
+	color: inherit;
+	text-decoration: underline;
+	text-decoration-thickness: 0.06em;
+	text-underline-offset: 0.12em;
+	overflow-wrap: anywhere;
+}
+
+.artist-statement-content a:hover {
+	color: #f4adc8;
+}
+
+.artist-statement-acknowledgements p:last-child {
+	margin-bottom: 0;
+}
+
 .app-overlay {
 	position: fixed;
 	inset: 0;
@@ -109,7 +225,7 @@
 	display: flex;
 	justify-content: flex-end;
 	align-items: flex-start;
-	padding-top: max(1rem, env(safe-area-inset-top));
+	padding-top: var(--app-control-top-offset);
 	padding-right: max(1rem, env(safe-area-inset-right));
 	padding-bottom: 1rem;
 	padding-left: max(1rem, env(safe-area-inset-left));
@@ -656,6 +772,24 @@
 }
 
 @media (max-width: 720px) {
+	.artist-statement-toggle {
+		left: max(0.75rem, env(safe-area-inset-left));
+	}
+
+	.artist-statement-content {
+		padding:
+			max(4.75rem, calc(env(safe-area-inset-top) + 4rem))
+			max(0.9rem, env(safe-area-inset-right))
+			max(2rem, env(safe-area-inset-bottom))
+			max(0.9rem, env(safe-area-inset-left));
+		font-size: clamp(0.9rem, 4vw, 1rem);
+		line-height: 1.5;
+	}
+
+	.artist-statement-content h1 {
+		font-size: 0.9rem;
+	}
+
 	.app-overlay {
 		justify-content: flex-end;
 		align-items: flex-start;
@@ -696,6 +830,16 @@
 		);
 	}
 
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.artist-statement-overlay {
+		animation: none;
+	}
+
+	.artist-statement-cursor {
+		animation: none;
+	}
 }
 
 @media (max-width: 720px) and (orientation: portrait) {
