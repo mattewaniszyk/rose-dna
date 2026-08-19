@@ -7,6 +7,7 @@ import {
 	LOADING_ANIMATION_DURATION,
 	LOADING_CHARACTER_DELAY,
 	LOADING_COMMAND,
+	LOADING_DOT_CYCLE_DURATION,
 	LOADING_DOT_TYPING_DELAY,
 	LOADING_FADE_REMOVAL_DELAY,
 	LOADING_REDUCED_MOTION_DURATION,
@@ -19,6 +20,10 @@ vi.mock("./experience-assets", () => ({
 
 type TestExperienceProps = {
 	onReady?: () => void;
+};
+
+type TestExperienceModule = {
+	default: ComponentType<TestExperienceProps>;
 };
 
 function TestExperience({ onReady }: TestExperienceProps) {
@@ -129,6 +134,39 @@ describe("Startup", () => {
 		expect(
 			view.getByRole("button", { name: "Mark experience ready" }),
 		).toBeTruthy();
+	});
+
+	it("keeps cycling the dots when loading takes longer than the minimum intro", async () => {
+		let resolveExperience:
+			| ((module: TestExperienceModule) => void)
+			| undefined;
+		const loadExperience = vi.fn(
+			() =>
+				new Promise<TestExperienceModule>((resolve) => {
+					resolveExperience = resolve;
+				}),
+		);
+		const view = render(<Startup loadExperience={loadExperience} />);
+		const copy = view.container.querySelector(".app-loading-copy");
+
+		act(() => vi.advanceTimersByTime(LOADING_ANIMATION_DURATION));
+		expect(loadExperience).toHaveBeenCalledTimes(1);
+		expect(copy?.textContent).toBe(`${LOADING_COMMAND}.`);
+
+		act(() => vi.advanceTimersByTime(LOADING_DOT_TYPING_DELAY - 20));
+		expect(copy?.textContent).toBe(`${LOADING_COMMAND}..`);
+
+		act(() =>
+			vi.advanceTimersByTime(
+				LOADING_DOT_CYCLE_DURATION - LOADING_DOT_TYPING_DELAY + 20,
+			),
+		);
+		expect(copy?.textContent).toBe(`${LOADING_COMMAND}.`);
+
+		resolveExperience?.({
+			default: TestExperience as ComponentType<TestExperienceProps>,
+		});
+		await flushExperienceImport();
 	});
 
 	it("keeps the completed overlay until readiness and two painted frames", async () => {

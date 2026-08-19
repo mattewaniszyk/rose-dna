@@ -11,14 +11,14 @@ import "./Startup.css";
 
 export const LOADING_COMMAND = "Run ROSE-DNA.exe //////// loading ";
 export const LOADING_CHARACTER_DELAY = 52;
-export const LOADING_DOT_CYCLES = 5;
+export const LOADING_MINIMUM_DOT_CYCLES = 5;
 export const LOADING_DOT_TYPING_DELAY = 280;
 export const LOADING_DOT_CYCLE_DURATION = 1_250;
 export const LOADING_REDUCED_MOTION_DURATION = 650;
 export const LOADING_FADE_REMOVAL_DELAY = 500;
 export const LOADING_ANIMATION_DURATION =
 	LOADING_CHARACTER_DELAY * LOADING_COMMAND.length +
-	LOADING_DOT_CYCLES * LOADING_DOT_CYCLE_DURATION +
+	LOADING_MINIMUM_DOT_CYCLES * LOADING_DOT_CYCLE_DURATION +
 	300;
 
 type LoadingFrame = {
@@ -38,39 +38,36 @@ type StartupProps = {
 	loadExperience?: () => Promise<ExperienceModule>;
 };
 
-function buildLoadingFrames(): LoadingFrame[] {
-	const frames: LoadingFrame[] = Array.from(LOADING_COMMAND).map(
+function buildCommandFrames(): LoadingFrame[] {
+	return Array.from(LOADING_COMMAND).map(
 		(_, index) => ({
 			at: LOADING_CHARACTER_DELAY * (index + 1),
 			text: LOADING_COMMAND.slice(0, index + 1),
 		}),
 	);
-	const commandTypingDuration =
-		LOADING_CHARACTER_DELAY * LOADING_COMMAND.length;
-
-	for (let cycle = 0; cycle < LOADING_DOT_CYCLES; cycle += 1) {
-		const cycleStart =
-			commandTypingDuration + cycle * LOADING_DOT_CYCLE_DURATION;
-
-		for (let dotCount = 1; dotCount <= 3; dotCount += 1) {
-			frames.push({
-				at: cycleStart + LOADING_DOT_TYPING_DELAY * dotCount,
-				text: `${LOADING_COMMAND}${".".repeat(dotCount)}`,
-			});
-		}
-
-		if (cycle < LOADING_DOT_CYCLES - 1) {
-			frames.push({
-				at: cycleStart + LOADING_DOT_CYCLE_DURATION,
-				text: LOADING_COMMAND,
-			});
-		}
-	}
-
-	return frames;
 }
 
-const LOADING_FRAMES = buildLoadingFrames();
+const COMMAND_TYPING_DURATION =
+	LOADING_CHARACTER_DELAY * LOADING_COMMAND.length;
+const COMMAND_FRAMES = buildCommandFrames();
+
+function getDotCycleState(elapsed: number) {
+	const cycleElapsed =
+		(elapsed - COMMAND_TYPING_DURATION) % LOADING_DOT_CYCLE_DURATION;
+	const dotCount = Math.min(
+		3,
+		Math.floor(cycleElapsed / LOADING_DOT_TYPING_DELAY),
+	);
+	const nextCycleTransition =
+		dotCount < 3
+			? (dotCount + 1) * LOADING_DOT_TYPING_DELAY
+			: LOADING_DOT_CYCLE_DURATION;
+
+	return {
+		text: `${LOADING_COMMAND}${".".repeat(dotCount)}`,
+		nextTransition: elapsed - cycleElapsed + nextCycleTransition,
+	};
+}
 
 function importExperience() {
 	return import("./App.tsx");
@@ -89,12 +86,19 @@ export function Startup({ loadExperience = importExperience }: StartupProps) {
 
 	useEffect(() => {
 		prefetchExperienceAssets();
+	}, []);
+
+	useEffect(() => {
+		if (experienceReady || loadError) {
+			return;
+		}
 
 		const prefersReducedMotion = window.matchMedia(
 			"(prefers-reduced-motion: reduce)",
 		).matches;
 		let timeout = 0;
 		let frameIndex = 0;
+		let hasCompletedIntro = false;
 		const startedAt = performance.now();
 		const duration = prefersReducedMotion
 			? LOADING_REDUCED_MOTION_DURATION
@@ -106,30 +110,46 @@ export function Startup({ loadExperience = importExperience }: StartupProps) {
 
 		const advance = () => {
 			const elapsed = performance.now() - startedAt;
-			let nextText: string | null = null;
+			let nextTransition = duration;
 
 			if (!prefersReducedMotion) {
-				while (
-					frameIndex < LOADING_FRAMES.length &&
-					LOADING_FRAMES[frameIndex].at <= elapsed
-				) {
-					nextText = LOADING_FRAMES[frameIndex].text;
-					frameIndex += 1;
-				}
+				if (elapsed < COMMAND_TYPING_DURATION) {
+					let nextText: string | null = null;
 
-				if (nextText !== null) {
-					setDisplayedText(nextText);
+					while (
+						frameIndex < COMMAND_FRAMES.length &&
+						COMMAND_FRAMES[frameIndex].at <= elapsed
+					) {
+						nextText = COMMAND_FRAMES[frameIndex].text;
+						frameIndex += 1;
+					}
+
+					if (nextText !== null) {
+						setDisplayedText(nextText);
+					}
+
+					nextTransition =
+						COMMAND_FRAMES[frameIndex]?.at ?? COMMAND_TYPING_DURATION;
+				} else {
+					const dotCycle = getDotCycleState(elapsed);
+					setDisplayedText(dotCycle.text);
+					nextTransition = dotCycle.nextTransition;
 				}
 			}
 
-			if (elapsed >= duration) {
+			if (!hasCompletedIntro && elapsed >= duration) {
+				hasCompletedIntro = true;
 				setIntroComplete(true);
+			}
+
+			if (prefersReducedMotion && hasCompletedIntro) {
 				return;
 			}
 
-			const nextTransition = prefersReducedMotion
-				? duration
-				: Math.min(LOADING_FRAMES[frameIndex]?.at ?? duration, duration);
+			if (!hasCompletedIntro) {
+				nextTransition = Math.min(nextTransition, duration);
+			}
+
 			timeout = window.setTimeout(
 				advance,
 				Math.max(0, nextTransition - elapsed),
@@ -139,7 +159,7 @@ export function Startup({ loadExperience = importExperience }: StartupProps) {
 		advance();
 
 		return () => window.clearTimeout(timeout);
-	}, []);
+	}, [experienceReady, loadError]);
 
 	useEffect(() => {
 		if (!introComplete) {
