@@ -9,6 +9,12 @@ import {
 } from "lucide-react";
 import "./App.css";
 import { Button } from "./components/ui/button";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "./components/ui/tooltip";
 import { AudioPanel } from "./components/AudioPanel";
 import { ArtistStatement } from "./components/ArtistStatement";
 import { BackgroundMenu } from "./components/BackgroundMenu";
@@ -381,6 +387,7 @@ function App({ onReady }: AppProps) {
 			: "balanced";
 
 	return (
+		<TooltipProvider>
 		<main className="app-shell" data-background-mode={backgroundMode}>
 			<header className="app-semantic-intro">
 				<h1>Rose DNA</h1>
@@ -430,34 +437,44 @@ function App({ onReady }: AppProps) {
 					<div className="app-control-stack">
 					<div className="utility-controls">
 						<div className="playback-control">
-							<Button
-								type="button"
-								variant="outline"
-								size="icon"
-								className="h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
-								onClick={() =>
-									void (genomicAudio.isPlaying
-										? genomicAudio.pause()
-										: genomicAudio.play())
-								}
-								disabled={
-									!hasPlayableSequence || isPlaybackLoading || isExporting
-								}
-								aria-busy={isPlaybackLoading}
-								aria-label={playbackLabel}
-								title={playbackLabel}
-							>
-								{isPlaybackLoading ? (
-									<Loader2Icon
-										className="size-4 animate-spin"
-										aria-hidden="true"
-									/>
-								) : genomicAudio.isPlaying ? (
-									<PauseIcon className="size-4" aria-hidden="true" />
-								) : (
-									<PlayIcon className="size-4" aria-hidden="true" />
-								)}
-							</Button>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span className="inline-flex">
+										<Button
+											type="button"
+											variant="outline"
+											size="icon"
+											className="h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+											onClick={() =>
+												void (genomicAudio.isPlaying
+													? genomicAudio.pause()
+													: genomicAudio.play())
+											}
+											disabled={
+												!hasPlayableSequence ||
+												isPlaybackLoading ||
+												isExporting
+											}
+											aria-busy={isPlaybackLoading}
+											aria-label={playbackLabel}
+										>
+											{isPlaybackLoading ? (
+												<Loader2Icon
+													className="size-4 animate-spin"
+													aria-hidden="true"
+												/>
+											) : genomicAudio.isPlaying ? (
+												<PauseIcon className="size-4" aria-hidden="true" />
+											) : (
+												<PlayIcon className="size-4" aria-hidden="true" />
+											)}
+										</Button>
+									</span>
+								</TooltipTrigger>
+								<TooltipContent sideOffset={8}>
+									{playbackLabel}
+								</TooltipContent>
+							</Tooltip>
 						</div>
 						<div className="randomize-control">
 							<Button
@@ -479,23 +496,33 @@ function App({ onReady }: AppProps) {
 							</Button>
 						</div>
 						<ShareSettingsButton url={shareUrl} />
-						<Button
-							type="button"
-							variant="outline"
-							size="icon"
-							className="controls-toggle h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
-							aria-controls="app-configuration-controls"
-							aria-expanded={controlsExpanded}
-							aria-label={controlsExpanded ? "Hide controls" : "Show controls"}
-							title={controlsExpanded ? "Hide controls" : "Show controls"}
-							onClick={() => setControlsExpanded((expanded) => !expanded)}
-						>
-							{controlsExpanded ? (
-								<XIcon className="size-4" aria-hidden="true" />
-							) : (
-								<MenuIcon className="size-4" aria-hidden="true" />
-							)}
-						</Button>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									className="controls-toggle h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+									aria-controls="app-configuration-controls"
+									aria-expanded={controlsExpanded}
+									aria-label={
+										controlsExpanded ? "Hide controls" : "Show controls"
+									}
+									onClick={() =>
+										setControlsExpanded((expanded) => !expanded)
+									}
+								>
+									{controlsExpanded ? (
+										<XIcon className="size-4" aria-hidden="true" />
+									) : (
+										<MenuIcon className="size-4" aria-hidden="true" />
+									)}
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent sideOffset={8}>
+								{controlsExpanded ? "Hide controls" : "Show controls"}
+							</TooltipContent>
+						</Tooltip>
 					</div>
 					<div
 						id="app-configuration-controls"
@@ -535,6 +562,7 @@ function App({ onReady }: AppProps) {
 				</div>
 			) : null}
 		</main>
+		</TooltipProvider>
 	);
 }
 

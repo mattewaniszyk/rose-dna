@@ -3,12 +3,17 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArtistStatement } from "./ArtistStatement";
 
 function ArtistStatementHarness() {
 	const [isOpen, setIsOpen] = useState(false);
 
-	return <ArtistStatement isOpen={isOpen} onOpenChange={setIsOpen} />;
+	return (
+		<TooltipProvider>
+			<ArtistStatement isOpen={isOpen} onOpenChange={setIsOpen} />
+		</TooltipProvider>
+	);
 }
 
 describe("ArtistStatement", () => {

@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
@@ -169,6 +174,7 @@ function VoiceControl({
 	settings,
 }: VoiceControlProps) {
 	const descriptionId = `voice-${base.toLowerCase()}-help`;
+	const previewLabel = `${isPreviewing ? "Stop" : "Preview"} ${VOICE_PRESET_DEFINITIONS[settings.preset].label}`;
 
 	return (
 		<fieldset className="audio-voice-card" disabled={disabled}>
@@ -202,22 +208,26 @@ function VoiceControl({
 						))}
 					</select>
 				</label>
-				<Button
-					type="button"
-					variant="outline"
-					size="sm"
-					className="audio-voice-preview"
-					title={`${isPreviewing ? "Stop" : "Preview"} ${VOICE_PRESET_DEFINITIONS[settings.preset].label}`}
-					aria-label={`${isPreviewing ? "Stop previewing" : "Preview"} ${VOICE_PRESET_DEFINITIONS[settings.preset].label} for base ${base}`}
-					aria-pressed={isPreviewing}
-					onClick={onPreview}
-				>
-					{isPreviewing ? (
-						<SquareIcon className="size-3.5" />
-					) : (
-						<PlayIcon className="size-3.5" />
-					)}
-				</Button>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="audio-voice-preview"
+							aria-label={`${isPreviewing ? "Stop previewing" : "Preview"} ${VOICE_PRESET_DEFINITIONS[settings.preset].label} for base ${base}`}
+							aria-pressed={isPreviewing}
+							onClick={onPreview}
+						>
+							{isPreviewing ? (
+								<SquareIcon className="size-3.5" />
+							) : (
+								<PlayIcon className="size-3.5" />
+							)}
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent sideOffset={4}>{previewLabel}</TooltipContent>
+				</Tooltip>
 			</div>
 
 			<div className="audio-voice-tuning">
@@ -351,6 +361,9 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 	const videoAspectConfig =
 		VIDEO_ASPECT_RATIO_CONFIGS[audio.videoAspectRatio];
 	const videoQualityConfig = VIDEO_QUALITY_CONFIGS[audio.videoQuality];
+	const mp4ExportTooltip = audio.isVideoExportSupported
+		? `Record ${videoAspectConfig.width}×${videoAspectConfig.height} ${audio.videoAspectRatio} MP4 at ${videoQualityConfig.label} quality`
+		: "This browser does not support MP4 scene capture";
 
 	return (
 		<div className="audio-menu">
@@ -799,28 +812,32 @@ export function AudioPanel({ audio }: AudioPanelProps) {
 								) : null}
 								Export MP3
 							</Button>
-							<Button
-								variant="default"
-								size="sm"
-								onClick={() => void audio.exportMp4()}
-								disabled={
-									!hasSequence ||
-									isExporting ||
-									!audio.isVideoExportSupported
-								}
-								title={
-									audio.isVideoExportSupported
-										? `Record ${videoAspectConfig.width}×${videoAspectConfig.height} ${audio.videoAspectRatio} MP4 at ${videoQualityConfig.label} quality`
-										: "This browser does not support MP4 scene capture"
-								}
-							>
-								{isExporting && audio.exportKind === "mp4" ? (
-									<Loader2Icon className="size-3.5 animate-spin" />
-								) : (
-									<FilmIcon className="size-3.5" />
-								)}
-								MP4
-							</Button>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span className="inline-flex">
+										<Button
+											variant="default"
+											size="sm"
+											onClick={() => void audio.exportMp4()}
+											disabled={
+												!hasSequence ||
+												isExporting ||
+												!audio.isVideoExportSupported
+											}
+										>
+											{isExporting && audio.exportKind === "mp4" ? (
+												<Loader2Icon className="size-3.5 animate-spin" />
+											) : (
+												<FilmIcon className="size-3.5" />
+											)}
+											MP4
+										</Button>
+									</span>
+								</TooltipTrigger>
+								<TooltipContent sideOffset={4}>
+									{mp4ExportTooltip}
+								</TooltipContent>
+							</Tooltip>
 							<Button
 								variant="outline"
 								size="sm"

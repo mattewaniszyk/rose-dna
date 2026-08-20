@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { FileTextIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type ArtistStatementProps = {
 	isOpen: boolean;
@@ -123,24 +128,28 @@ export function ArtistStatement({
 		onOpenChange(nextIsOpen);
 	};
 	const toggle = (
-		<Button
-			ref={toggleRef}
-			type="button"
-			variant="outline"
-			size="icon"
-			className="artist-statement-toggle h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
-			aria-controls={ARTIST_STATEMENT_ID}
-			aria-expanded={isOpen}
-			aria-label={label}
-			title={label}
-			onClick={() => handleOpenChange(!isOpen)}
-		>
-			{isOpen ? (
-				<XIcon className="size-4" aria-hidden="true" />
-			) : (
-				<FileTextIcon className="size-4" aria-hidden="true" />
-			)}
-		</Button>
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					ref={toggleRef}
+					type="button"
+					variant="outline"
+					size="icon"
+					className="artist-statement-toggle h-11 w-11 rounded-full border-white/10 bg-black/55 text-white shadow-[0_16px_42px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-black/70 hover:text-white"
+					aria-controls={ARTIST_STATEMENT_ID}
+					aria-expanded={isOpen}
+					aria-label={label}
+					onClick={() => handleOpenChange(!isOpen)}
+				>
+					{isOpen ? (
+						<XIcon className="size-4" aria-hidden="true" />
+					) : (
+						<FileTextIcon className="size-4" aria-hidden="true" />
+					)}
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent sideOffset={8}>{label}</TooltipContent>
+		</Tooltip>
 	);
 
 	return (
