@@ -35,4 +35,28 @@ describe("BackgroundMenu", () => {
 		expect(onBackgroundModeChange).toHaveBeenCalledWith("space");
 		expect(trigger.getAttribute("aria-expanded")).toBe("true");
 	});
+
+	it("does not autofocus the first scene option when the panel opens", () => {
+		const view = render(
+			<BackgroundMenu
+				backgroundMode="space"
+				onBackgroundModeChange={vi.fn()}
+				overlayEffect="none"
+				onOverlayEffectChange={vi.fn()}
+				roseAnglePreset="default"
+				onRoseAnglePresetChange={vi.fn()}
+				roseMaterialPreset="default"
+				onRoseMaterialPresetChange={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(view.getByRole("button", { name: /Scene/ }));
+
+		expect(document.activeElement).not.toBe(
+			view.getByRole("radio", {
+				name: /Black Use a plain black backdrop/,
+			}),
+		);
+		expect(document.activeElement).toBe(view.getByRole("dialog"));
+	});
 });
